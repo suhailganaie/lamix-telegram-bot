@@ -1,5 +1,6 @@
 const { Telegraf, Markup } = require("telegraf");
-const puppeteer = require("puppeteer");
+const puppeteer = require("puppeteer-core");
+const chromium = require("@sparticuz/chromium");
 require("dotenv").config();
 
 const clients = require("./clients.json").clients;
@@ -44,7 +45,6 @@ bot.on("text", async (ctx) => {
 
   const text = ctx.message.text.trim();
 
-  // CLIENT ID
   if (state.step === "waiting_client_id") {
 
     if (!clients.includes(text)) {
@@ -59,7 +59,6 @@ bot.on("text", async (ctx) => {
     return ctx.reply("🌍 Send the country name");
   }
 
-  // COUNTRY
   if (state.step === "choose_country") {
 
     const realCountry = COUNTRIES.find(
@@ -76,7 +75,6 @@ bot.on("text", async (ctx) => {
     return sendRanges(ctx, realCountry);
   }
 
-  // QUANTITY
   if (state.step === "quantity") {
 
     const qty = parseInt(text);
@@ -110,7 +108,6 @@ ${result.numbers.join("\n")}`
     );
 
     delete userStates[ctx.from.id];
-
   }
 
 });
@@ -122,7 +119,6 @@ bot.on("callback_query", async (ctx) => {
 
   await ctx.answerCbQuery();
 
-  // CONTINUE WITH SAVED ID
   if (data === "continue_id") {
 
     const clientId = userClientIds[ctx.from.id];
@@ -133,21 +129,17 @@ bot.on("callback_query", async (ctx) => {
     };
 
     return ctx.reply("🌍 Send the country name");
-
   }
 
-  // CHANGE CLIENT ID
   if (data === "change_id") {
 
     userStates[ctx.from.id] = { step: "waiting_client_id" };
 
     return ctx.reply("🔑 Enter new Lamix Client ID");
-
   }
 
   if (!state) return;
 
-  // RANGE SELECT
   if (data.startsWith("range_")) {
 
     const index = parseInt(data.split("_")[1]);
@@ -156,21 +148,17 @@ bot.on("callback_query", async (ctx) => {
     state.step = "quantity";
 
     return ctx.reply("📦 How many numbers? (5-50)");
-
   }
 
-  // BACK BUTTON
   if (data === "back_country") {
 
     state.step = "choose_country";
 
     return ctx.reply("🌍 Send the country name");
-
   }
 
 });
 
-// SEND RANGES
 function sendRanges(ctx, country) {
 
   const ranges = RANGES[country];
@@ -200,28 +188,33 @@ function sendRanges(ctx, country) {
     `📱 Choose Range (${country})`,
     Markup.inlineKeyboard(buttons)
   );
-
 }
 
-// ALLOCATION
 async function allocateNumbers(clientId, country, rangeName, qty) {
 
+  console.log("-----------");
+  console.log("Starting allocation");
+  console.log("Client:", clientId);
+  console.log("Country:", country);
+  console.log("Range:", rangeName);
+
   const browser = await puppeteer.launch({
-    headless: "new",
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-      "--disable-gpu"
-    ]
+    args: chromium.args,
+    executablePath: await chromium.executablePath(),
+    headless: chromium.headless
   });
 
   const page = await browser.newPage();
-  await page.setDefaultTimeout(60000);
 
   try {
 
-    await page.goto(process.env.LAMIX_URL + "/login", { waitUntil: "networkidle2" });
+    console.log("Opening login page");
+
+    await page.goto(process.env.LAMIX_URL + "/login", {
+      waitUntil: "networkidle2"
+    });
+
+    console.log("Entering login");
 
     await page.type('input[type="text"],input[name="username"]', process.env.LAMIX_USER);
     await page.type('input[type="password"]', process.env.LAMIX_PASS);
@@ -229,9 +222,16 @@ async function allocateNumbers(clientId, country, rangeName, qty) {
     await solveMathCaptcha(page);
 
     await page.click("button[type=submit]");
+
     await page.waitForNavigation({ timeout: 20000 });
 
-    await page.goto(process.env.LAMIX_URL + "/numbers", { waitUntil: "networkidle2" });
+    console.log("Login successful");
+
+    await page.goto(process.env.LAMIX_URL + "/numbers", {
+      waitUntil: "networkidle2"
+    });
+
+    console.log("Opening range:", rangeName);
 
     await page.evaluate((rangeName) => {
       const el = [...document.querySelectorAll("*")]
@@ -240,6 +240,8 @@ async function allocateNumbers(clientId, country, rangeName, qty) {
     }, rangeName);
 
     await page.waitForTimeout(2000);
+
+    console.log("Collecting numbers");
 
     const numbers = await page.evaluate(() => {
 
@@ -252,12 +254,16 @@ async function allocateNumbers(clientId, country, rangeName, qty) {
 
     });
 
+    console.log("Numbers found:", numbers.length);
+
     if (numbers.length === 0) {
       await browser.close();
       return { success: false, message: "No free numbers in this range" };
     }
 
     const selected = numbers.slice(0, qty);
+
+    console.log("Selected numbers:", selected);
 
     await browser.close();
 
@@ -268,14 +274,15 @@ async function allocateNumbers(clientId, country, rangeName, qty) {
 
   } catch (e) {
 
-    await browser.close();
-    return { success: false, message: e.message };
+    console.log("ERROR:", e.message);
 
+    await browser.close();
+
+    return { success: false, message: e.message };
   }
 
 }
 
-// CAPTCHA
 async function solveMathCaptcha(page) {
 
   try {
@@ -295,10 +302,12 @@ async function solveMathCaptcha(page) {
     if (op === "+") result = a + b;
     if (op === "-") result = a - b;
 
+    console.log(`Captcha solved: ${a}${op}${b}=${result}`);
+
     await page.type('input[name="captcha"],#captcha', result.toString());
 
   } catch (e) {
-    console.log("captcha skipped");
+    console.log("Captcha skipped");
   }
 
 }
