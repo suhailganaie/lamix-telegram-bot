@@ -52,7 +52,6 @@ bot.on("text", async (ctx) => {
     }
 
     userClientIds[ctx.from.id] = text;
-
     state.clientId = text;
     state.step = "choose_country";
 
@@ -211,17 +210,23 @@ async function allocateNumbers(clientId, country, rangeName, qty) {
     console.log("Opening login page");
 
     await page.goto(process.env.LAMIX_URL + "/login", {
-      waitUntil: "networkidle2"
+      waitUntil: "domcontentloaded"
     });
 
-    console.log("Entering login");
+    console.log("Waiting for login inputs");
 
-    await page.type('input[type="text"],input[name="username"]', process.env.LAMIX_USER);
-    await page.type('input[type="password"]', process.env.LAMIX_PASS);
+    await page.waitForSelector('input[placeholder="Username"]');
+
+    console.log("Entering credentials");
+
+    await page.type('input[placeholder="Username"]', process.env.LAMIX_USER);
+    await page.type('input[placeholder="Password"]', process.env.LAMIX_PASS);
 
     await solveMathCaptcha(page);
 
-    await page.click("button[type=submit]");
+    console.log("Submitting login");
+
+    await page.click("button");
 
     await page.waitForNavigation({ timeout: 20000 });
 
@@ -257,8 +262,11 @@ async function allocateNumbers(clientId, country, rangeName, qty) {
     console.log("Numbers found:", numbers.length);
 
     if (numbers.length === 0) {
+
       await browser.close();
+
       return { success: false, message: "No free numbers in this range" };
+
     }
 
     const selected = numbers.slice(0, qty);
@@ -289,25 +297,23 @@ async function solveMathCaptcha(page) {
 
     const text = await page.evaluate(() => document.body.innerText);
 
-    const match = text.match(/(\d+)\s*([+\-])\s*(\d+)/);
+    const match = text.match(/(\d+)\s*\+\s*(\d+)/);
 
     if (!match) return;
 
     const a = parseInt(match[1]);
-    const op = match[2];
-    const b = parseInt(match[3]);
+    const b = parseInt(match[2]);
 
-    let result;
+    const result = a + b;
 
-    if (op === "+") result = a + b;
-    if (op === "-") result = a - b;
+    console.log(`Captcha solved: ${a}+${b}=${result}`);
 
-    console.log(`Captcha solved: ${a}${op}${b}=${result}`);
-
-    await page.type('input[name="captcha"],#captcha', result.toString());
+    await page.type('input[placeholder="Answer"]', result.toString());
 
   } catch (e) {
+
     console.log("Captcha skipped");
+
   }
 
 }
