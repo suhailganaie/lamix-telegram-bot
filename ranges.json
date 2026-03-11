@@ -1,0 +1,253 @@
+{
+  "Afghanistan": [
+    "Afghanistan LX 03D",
+    "Afghanistan LX 09D",
+    "Afghanistan LX 12D",
+    "Afghanistan LX 02D",
+    "Afghanistan LX 21D",
+    "Afghanistan LX 9374478XXXX",
+    "Afghanistan LX 9374342XXXX",
+    "Afghanistan LX 9374345XXXX",
+    "Afghanistan LX 9374347XXXX",
+    "Afghanistan LX 9374496XXXX",
+    "Afghanistan LX 9374903XXXX"
+  ],
+  "Algeria": [
+    "Algeria LX 25F",
+    "Algeria LX 05Mar",
+    "Algeria LX 10Mar",
+    "Algeria LX 11J",
+    "Algeria LX 21F",
+    "Algeria LX 28J",
+    "Algeria LX 2Mar",
+    "Algeria LX 5Mar",
+    "Algeria LX 7J"
+  ],
+  "Angola": [
+    "Angola LX 02D",
+    "Angola LX 03F",
+    "Angola LX 08D",
+    "Angola LX 10F",
+    "Angola LX 11D",
+    "Angola LX 17F",
+    "Angola LX 05Mar",
+    "Angola LX 10Mar",
+    "Angola LX 12J",
+    "Angola LX 19F",
+    "Angola LX 19J",
+    "Angola LX 23D",
+    "Angola LX 23J",
+    "Angola LX 30D",
+    "Angola LX 3Mar",
+    "Angola LX 5J"
+  ],
+  "Argentina": [
+    "Argentina LX 25J"
+  ],
+  "Armenia": [
+    "Armenia Karabakh LX 3744488"
+  ],
+  "Armenia Ucom": [
+    "Armenia Ucom LX 3744102XXXX",
+    "Armenia Ucom LX 3744140XXXX",
+    "Armenia Ucom LX 3744178XXXX",
+    "Armenia Ucom LX 3744416XXXX",
+    "Armenia Ucom LX 3744421",
+    "Armenia Ucom LX 3744438",
+    "Armenia Ucom LX 3744452XXXX",
+    "Armenia Ucom LX 3744466",
+    "Armenia Ucom LX 3744472XXXX",
+    "Armenia Ucom LX 3744489",
+    "Armenia Ucom LX 3745548",
+    "Armenia Ucom LX 3745553",
+    "Armenia Ucom LX 3745576XXXX",
+    "Armenia Ucom LX 3749566",
+    "Armenia Ucom LX 3749572XXXX"
+  ],
+  "Armenia Viva": [
+    "Armenia Viva 3749119",
+    "Armenia Viva 3749455",
+    "Armenia Viva 3749808"
+  ],
+  "Azerbaijan": [
+    "Azerbaijan LX 15D",
+    "Azerbaijan LX 25J",
+    "Azerbaijan LX 30D",
+    "Azerbaijan LX 31J",
+    "Azerbaijan LX 99410234XXXX",
+    "Azerbaijan LX 99455105XXXX",
+    "Azerbaijan LX 99470081XXXX"
+  ],
+  "Belarus": [
+    "Belarus 37525505XXXX",
+    "Belarus 37525713XXXX",
+    "Belarus 37529308XXXX",
+    "Belarus 37529706XXXX",
+    "Belarus 37529889XXXX",
+    "Belarus 37529292XXXX"
+  ],
+  "Belgium": [
+    "Belgium LX 12F"
+  ],
+  "Benin": [
+    "Benin LX 09Mar",
+    "Benin LX 25J",
+    "Benin LX 2F"
+  ],
+  "Bhutan": [
+    "Bhutan TashiCell 9757747XXXX"
+  ],
+  "Bolivia": [
+    "Bolivia LX 17J",
+    "Bolivia LX 23J",
+    "Bolivia LX 6F"
+  ],
+  "Bulgaria": [
+    "Bulgaria LX 7F",
+    "Bulgaria LX 16F",
+    "Bulgaria LX 35988354",
+    "Bulgaria LX 35988556",
+    "Bulgaria LX 35988702"
+  ],
+  "Cambodia": [
+    "Cambodia LX 03F",
+    "Cambodia LX 05Mar",
+    "Cambodia LX 10F",
+    "Cambodia LX 10Mar",
+    "Cambodia LX 17F",
+    "Cambodia LX 19F",
+    "Cambodia LX 22J",
+    "Cambodia LX 27J",
+    "Cambodia LX 3Mar"
+  ],
+  "Egypt": [
+    "Egypt LX 24F",
+    "Egypt LX 25J",
+    "Egypt LX 4F",
+    "Egypt LX 5Mar"
+  ],
+  "Indonesia": [
+    "Indonesia LX 21D",
+    "Indonesia LX 22J",
+    "Indonesia LX 10Mar",
+    "Indonesia LX 29D",
+    "Indonesia LX 6288102214XXXX",
+    "Indonesia LX 628811582XXXX",
+    "Indonesia LX 628812210XXXX",
+    "Indonesia LX 628812234XXXX",
+    "Indonesia LX 628812244XXXX",
+    "Indonesia LX 628824241XXXX",
+    "Indonesia LX 628824562XXXX",
+    "Indonesia LX 628824905XXXX",
+    "Indonesia LX 628829516XXXX",
+    "Indonesia LX 6288299526",
+    "Indonesia LX 628870743XXXX",
+    "Indonesia LX 628870744XXXX",
+    "Indonesia LX 628880164XXXX",
+    "Indonesia LX 628880165XXXX",
+    "Indonesia LX 628880167XXXX",
+    "Indonesia LX 628897200XXXX",
+    "Indonesia LX 628899130XXXX"
+  ],
+  "Kenya": [
+    "Kenya LX 21D",
+    "Kenya LX 5Mar",
+    "Kenya LX 25476176XXXX",
+    "Kenya LX 25476178XXXX",
+    "Kenya LX 25476183XXXX",
+    "Kenya LX 25477533XXXX",
+    "Kenya LX 25477701XXXX",
+    "Kenya LX 25477745XXXX",
+    "Kenya LX 25477782XXXX",
+    "Kenya LX 25477794XXXX",
+    "Kenya LX 25477830XXXX",
+    "Kenya LX 25477939XXXX"
+  ],
+  "Malaysia Celcom": [
+    "Malaysia Celcom LX 02D",
+    "Malaysia Celcom LX 03F",
+    "Malaysia Celcom LX 05Mar",
+    "Malaysia Celcom LX 08D",
+    "Malaysia Celcom LX 10F",
+    "Malaysia Celcom LX 10Mar",
+    "Malaysia Celcom LX 11D",
+    "Malaysia Celcom LX 12J",
+    "Malaysia Celcom LX 17F",
+    "Malaysia Celcom LX 19F",
+    "Malaysia Celcom LX 20J",
+    "Malaysia Celcom LX 23D",
+    "Malaysia Celcom LX 2Mar",
+    "Malaysia Celcom LX 30D",
+    "Malaysia Celcom LX 5J"
+  ],
+  "Nigeria": [
+    "Nigeria LX MIX 1",
+    "Nigeria LX MIX 2",
+    "Nigeria LX MIX 3",
+    "Nigeria LX MIX 4",
+    "Nigeria LX MIX 5",
+    "Nigeria LX MIX 6",
+    "Nigeria LX MIX 7",
+    "Nigeria LX MIX 8",
+    "Nigeria LX MIX 9",
+    "Nigeria LX MIX 10",
+    "Nigeria LX MIX 11"
+  ],
+  "Pakistan": [
+    "Pakistan LX 25J",
+    "Pakistan LX 27F"
+  ],
+  "Saudi Arabia": [
+    "Saudi LX 05J",
+    "Saudi LX 12J",
+    "Saudi LX 15J",
+    "Saudi LX 19J"
+  ],
+  "Sri Lanka": [
+    "Sri Lanka LX 02D",
+    "Sri Lanka LX 05Mar",
+    "Sri Lanka LX 08D",
+    "Sri Lanka LX 10F",
+    "Sri Lanka LX 11D",
+    "Sri Lanka LX 12J",
+    "Sri Lanka LX 17F",
+    "Sri Lanka LX 19F",
+    "Sri Lanka LX 19J",
+    "Sri Lanka LX 23D",
+    "Sri Lanka LX 23J",
+    "Sri Lanka LX 30D",
+    "Sri Lanka LX 3Mar"
+  ],
+  "United Arab Emirates": [
+    "United Arab Emirates LX 12J",
+    "United Arab Emirates LX 15D"
+  ],
+  "Vietnam": [
+    "Vietnam LX 25J",
+    "Vietnam LX 8470216XXXX",
+    "Vietnam LX 8477704XXXX",
+    "Vietnam LX 8477927XXXX",
+    "Vietnam LX 8477929XXXX",
+    "Vietnam LX 8477953XXXX",
+    "Vietnam LX 8477955XXXX",
+    "Vietnam LX 8489916XXXX",
+    "Vietnam LX 8490104XXXX",
+    "Vietnam LX 8490356XXXX",
+    "Vietnam LX 8490921XXXX",
+    "Vietnam LX 8493571XXXX",
+    "Vietnam LX 8493841XXXX"
+  ],
+  "Zimbabwe": [
+    "Zimbabwe LX 25F",
+    "Zimbabwe LX 26373112XXXX",
+    "Zimbabwe LX 26373153XXXX",
+    "Zimbabwe LX 26373187XXXX",
+    "Zimbabwe LX 26373191XXXX",
+    "Zimbabwe LX 26373194XXXX",
+    "Zimbabwe LX 26373195XXXX",
+    "Zimbabwe LX 26373242XXXX",
+    "Zimbabwe LX 26373951XXXX",
+    "Zimbabwe LX 26373953XXXX",
+    "Zimbabwe LX 26373980XXXX"
+  ]
+}
