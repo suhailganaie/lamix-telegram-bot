@@ -35,9 +35,31 @@ return ctx.reply("❌ Wrong client ID. Please enter your ID.");
 state.clientId=text;
 state.step="choose_country";
 
-const buttons=Object.keys(RANGES).map(c=>[
-{ text:`${c} (${RANGES[c].length})`,callback_data:`country_${c}`}
-]);
+const countries = Object.keys(RANGES);
+
+const buttons=[];
+
+for(let i=0;i<countries.length;i+=2){
+
+const row=[
+{
+text:`${countries[i]} (${RANGES[countries[i]].length})`,
+callback_data:`country_${countries[i]}`
+}
+];
+
+if(countries[i+1]){
+
+row.push({
+text:`${countries[i+1]} (${RANGES[countries[i+1]].length})`,
+callback_data:`country_${countries[i+1]}`
+});
+
+}
+
+buttons.push(row);
+
+}
 
 return ctx.reply(
 "🌍 Choose Country",
@@ -97,9 +119,27 @@ state.step="choose_range";
 
 const ranges=RANGES[state.country];
 
-const buttons=ranges.map((r,i)=>[
-{ text:r,callback_data:`range_${i}`}
-]);
+const buttons=[];
+
+for(let i=0;i<ranges.length;i+=2){
+
+const row=[{
+text:ranges[i],
+callback_data:`range_${i}`
+}];
+
+if(ranges[i+1]){
+
+row.push({
+text:ranges[i+1],
+callback_data:`range_${i+1}`
+});
+
+}
+
+buttons.push(row);
+
+}
 
 return ctx.reply(
 `📱 Choose Range (${state.country})`,
@@ -137,7 +177,7 @@ const page=await browser.newPage();
 
 try{
 
-await page.goto(process.env.LAMIX_URL+"/login");
+await page.goto(process.env.LAMIX_URL+"/login",{waitUntil:"networkidle2"});
 
 await page.type('input[type="text"],input[name="username"]',process.env.LAMIX_USER);
 await page.type('input[type="password"]',process.env.LAMIX_PASS);
@@ -146,9 +186,9 @@ await solveMathCaptcha(page);
 
 await page.click("button[type=submit]");
 
-await page.waitForNavigation({timeout:15000});
+await page.waitForNavigation({timeout:20000});
 
-await page.goto(process.env.LAMIX_URL+"/numbers");
+await page.goto(process.env.LAMIX_URL+"/numbers",{waitUntil:"networkidle2"});
 
 await page.evaluate((rangeName)=>{
 const el=[...document.querySelectorAll("*")]
