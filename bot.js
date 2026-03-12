@@ -3,7 +3,7 @@ const puppeteer = require("puppeteer-core");
 const chromium = require("@sparticuz/chromium");
 require("dotenv").config();
 
-const clients = require("./clients.json").clients;
+const clients = require("./clients.json");
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
