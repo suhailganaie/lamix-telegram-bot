@@ -12,7 +12,6 @@ const userClientIds = {};
 
 let browser;
 let page;
-let loggedIn = false;
 
 let RANGE_MAP = {};
 let RANGE_LIST = [];
@@ -40,58 +39,8 @@ async function initBrowser(){
   await page.setViewport({width:1280,height:800});
 
   await page.setUserAgent(
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
   );
-
-}
-
-async function fetchRanges(){
-
-  console.log("📡 Fetching ranges");
-
-  const data = await page.evaluate(async(base)=>{
-
-    const res = await fetch(base + "/ints/agent/aj_smsranges.php",{
-
-      method:"POST",
-      headers:{
-        "Content-Type":"application/x-www-form-urlencoded"
-      },
-
-      body:new URLSearchParams({
-        max:1000,
-        page:1
-      })
-
-    });
-
-    const text = await res.text();
-
-    try{
-      return JSON.parse(text);
-    }catch(e){
-      return {error:text};
-    }
-
-  },process.env.LAMIX_URL);
-
-  if(data.error){
-    throw new Error("Range API error");
-  }
-
-  RANGE_MAP = {};
-  RANGE_LIST = [];
-
-  data.results.forEach(r=>{
-
-    const name = r.title.trim().replace(/^-\s*/,"");
-
-    RANGE_MAP[name] = r.id;
-    RANGE_LIST.push(name);
-
-  });
-
-  console.log("✅ Loaded ranges:",RANGE_LIST.length);
 
 }
 
@@ -100,30 +49,24 @@ async function ensureSession(){
   try{
 
     await page.goto(
-      process.env.LAMIX_URL+"/agent/SMSBulkAllocations",
+      process.env.LAMIX_URL+"/ints/agent/SMSBulkAllocations",
       {waitUntil:"networkidle2"}
     );
 
-    if(!page.url().includes("login")){
-      loggedIn=true;
-      return true;
-    }
-
-    loggedIn=false;
-    return false;
+    return !page.url().includes("login");
 
   }catch{
-
-    loggedIn=false;
     return false;
-
   }
 
 }
 
 async function loginLamix(){
 
-  if(await ensureSession()) return;
+  if(await ensureSession()){
+    console.log("✅ Session already valid");
+    return;
+  }
 
   console.log("🌐 Opening Lamix login");
 
@@ -131,10 +74,8 @@ async function loginLamix(){
 
   await page.waitForSelector('input[name="username"]');
 
-  await page.type('input[name="username"]',process.env.LAMIX_USER,{delay:30});
-  await page.type('input[name="password"]',process.env.LAMIX_PASS,{delay:30});
-
-  console.log("🧠 Solving captcha");
+  await page.type('input[name="username"]',process.env.LAMIX_USER,{delay:20});
+  await page.type('input[name="password"]',process.env.LAMIX_PASS,{delay:20});
 
   const body = await page.evaluate(()=>document.body.innerText);
 
@@ -155,19 +96,64 @@ async function loginLamix(){
   await sleep(4000);
 
   await page.goto(
-    process.env.LAMIX_URL+"/agent/SMSBulkAllocations",
+    process.env.LAMIX_URL+"/ints/agent/SMSBulkAllocations",
     {waitUntil:"networkidle2"}
   );
 
   if(page.url().includes("login")){
-    throw new Error("Login failed");
+    throw new Error("Lamix login failed");
   }
-
-  loggedIn=true;
 
   console.log("✅ LOGIN SUCCESS");
 
-  await fetchRanges();
+}
+
+async function fetchRanges(){
+
+  console.log("📡 Fetching ranges");
+
+  RANGE_MAP = {};
+  RANGE_LIST = [];
+
+  let pageNum = 1;
+
+  while(true){
+
+    const data = await page.evaluate(async(pageNum)=>{
+
+      const res = await fetch(
+        `/ints/agent/res/aj_smsranges.php?max=25&page=${pageNum}`,
+        {headers:{"X-Requested-With":"XMLHttpRequest"}}
+      );
+
+      const text = await res.text();
+
+      try{
+        return JSON.parse(text);
+      }catch{
+        return {error:text};
+      }
+
+    },pageNum);
+
+    if(data.error) throw new Error("Range API error");
+
+    if(!data.results || data.results.length===0) break;
+
+    data.results.forEach(r=>{
+
+      const name = r.title.trim().replace(/^-\s*/,"");
+
+      RANGE_MAP[name] = r.id;
+      RANGE_LIST.push(name);
+
+    });
+
+    pageNum++;
+
+  }
+
+  console.log("✅ Total ranges:",RANGE_LIST.length);
 
 }
 
@@ -178,7 +164,7 @@ async function prepareLamix(){
   if(lamixLoginInProgress){
 
     while(lamixLoginInProgress){
-      await sleep(1000);
+      await sleep(500);
     }
 
     return;
@@ -187,9 +173,11 @@ async function prepareLamix(){
 
   lamixLoginInProgress=true;
 
-  console.log("🔐 Preparing Lamix session");
+  console.log("🔐 Preparing Lamix");
 
   await loginLamix();
+
+  await fetchRanges();
 
   lamixReady=true;
   lamixLoginInProgress=false;
@@ -209,10 +197,10 @@ bot.start(async(ctx)=>{
     if(saved){
 
       return ctx.reply(
-`👤 Saved Client ID: ${saved}`,
+`👤 Saved Client: ${saved}`,
 Markup.inlineKeyboard([
-[{text:"✅ Continue",callback_data:"continue"}],
-[{text:"🔄 Change ID",callback_data:"change"}]
+[{text:"Continue",callback_data:"continue"}],
+[{text:"Change",callback_data:"change"}]
 ])
 );
 
@@ -220,7 +208,7 @@ Markup.inlineKeyboard([
 
     userStates[ctx.from.id]={step:"client"};
 
-    ctx.reply("🔑 Enter Lamix Client ID");
+    ctx.reply("Enter Lamix Client ID");
 
   }catch(e){
 
@@ -250,7 +238,7 @@ bot.on("text",async(ctx)=>{
     state.clientId=text;
     state.step="range";
 
-    return ctx.reply("🔎 Send country or range");
+    return ctx.reply("Send country or range");
 
   }
 
@@ -262,11 +250,11 @@ bot.on("text",async(ctx)=>{
 
     const qty=Number(text);
 
-    if(!qty || qty<1 || qty>50){
-      return ctx.reply("❌ Quantity must be 1-50");
+    if(!qty||qty<1||qty>50){
+      return ctx.reply("Quantity must be 1-50");
     }
 
-    ctx.reply("⏳ Allocating numbers...");
+    ctx.reply("Allocating numbers...");
 
     const res=await allocateNumbers(
       state.clientId,
@@ -305,7 +293,7 @@ bot.on("callback_query",async(ctx)=>{
 
     userStates[ctx.from.id]={step:"range",clientId:id};
 
-    return ctx.reply("🔎 Send country or range");
+    return ctx.reply("Send country or range");
 
   }
 
@@ -313,7 +301,7 @@ bot.on("callback_query",async(ctx)=>{
 
     userStates[ctx.from.id]={step:"client"};
 
-    return ctx.reply("🔑 Enter client ID");
+    return ctx.reply("Enter client ID");
 
   }
 
@@ -325,7 +313,7 @@ bot.on("callback_query",async(ctx)=>{
 
     state.step="qty";
 
-    return ctx.reply("📦 Enter quantity");
+    return ctx.reply("Enter quantity");
 
   }
 
@@ -336,11 +324,11 @@ function sendRanges(ctx,input){
   const clean=input.replace(/xxxx/ig,"").trim();
 
   const ranges=RANGE_LIST
-    .filter(r=>r.toLowerCase().includes(clean.toLowerCase()))
-    .slice(0,40);
+  .filter(r=>r.toLowerCase().includes(clean.toLowerCase()))
+  .slice(0,40);
 
   if(!ranges.length){
-    return ctx.reply("❌ No ranges found\nSend another range");
+    return ctx.reply("❌ No ranges found");
   }
 
   const buttons=[];
@@ -362,7 +350,7 @@ function sendRanges(ctx,input){
   userStates[ctx.from.id].ranges=ranges;
 
   ctx.reply(
-"📱 Choose Range",
+"Choose Range",
 Markup.inlineKeyboard(buttons)
 );
 
@@ -371,7 +359,7 @@ Markup.inlineKeyboard(buttons)
 async function allocateNumbers(clientName,rangeName,qty){
 
   while(allocationLock){
-    await sleep(500);
+    await sleep(300);
   }
 
   allocationLock=true;
@@ -398,10 +386,10 @@ async function allocateNumbers(clientName,rangeName,qty){
       qty
     };
 
-    const res=await page.evaluate(async(payload,base)=>{
+    const res=await page.evaluate(async(payload)=>{
 
       const r=await fetch(
-        base+"/ints/agent/SMSBulkAllocations",
+        "/ints/agent/SMSBulkAllocations",
         {
           method:"POST",
           headers:{
@@ -413,7 +401,7 @@ async function allocateNumbers(clientName,rangeName,qty){
 
       return await r.text();
 
-    },payload,process.env.LAMIX_URL);
+    },payload);
 
     allocationLock=false;
 
@@ -430,7 +418,6 @@ async function allocateNumbers(clientName,rangeName,qty){
   }catch(e){
 
     allocationLock=false;
-    loggedIn=false;
 
     return {success:false,message:e.message};
 
@@ -461,16 +448,6 @@ setInterval(async()=>{
   }
 
 },600000);
-
-bot.catch((err,ctx)=>{
-
-  console.error("BOT ERROR:",err);
-
-  if(ctx){
-    ctx.reply("⚠ Bot error occurred");
-  }
-
-});
 
 (async()=>{
 
