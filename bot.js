@@ -100,10 +100,8 @@ async function loginLamix(){
   const match = body.match(/(\d+)\s*\+\s*(\d+)/);
 
   if(match){
-
     const result = Number(match[1]) + Number(match[2]);
     await page.type('input[name="capt"]',String(result));
-
   }
 
   await Promise.all([
@@ -135,9 +133,7 @@ async function loadAllRanges(){
       const res=await fetch(
         `/ints/agent/res/aj_smsranges.php?max=25&page=${pageNum}`,
         {
-          headers:{
-            "X-Requested-With":"XMLHttpRequest"
-          },
+          headers:{ "X-Requested-With":"XMLHttpRequest" },
           credentials:"include"
         }
       );
@@ -153,14 +149,8 @@ async function loadAllRanges(){
     if(!data.results || !data.results.length) break;
 
     data.results.forEach(r=>{
-
       const name=r.title.trim().replace(/^-\s*/,"");
-
-      ALL_RANGES.push({
-        id:r.id,
-        name
-      });
-
+      ALL_RANGES.push({ id:r.id, name });
     });
 
     if(!data.pagination || !data.pagination.more) break;
@@ -178,13 +168,10 @@ async function prepareLamix(){
   if(lamixReady) return;
 
   if(lamixLoginInProgress){
-
     while(lamixLoginInProgress){
       await sleep(500);
     }
-
     return;
-
   }
 
   lamixLoginInProgress=true;
@@ -204,7 +191,6 @@ bot.start(async(ctx)=>{
   const saved=userClientIds[ctx.from.id];
 
   if(saved){
-
     return ctx.reply(
 `Saved Client ID: ${saved}`,
 Markup.inlineKeyboard([
@@ -212,11 +198,9 @@ Markup.inlineKeyboard([
 [{text:"Enter New ID",callback_data:"new_id"}]
 ])
 );
-
   }
 
   userStates[ctx.from.id]={step:"client"};
-
   ctx.reply("Enter Lamix Client ID");
 
 });
@@ -229,14 +213,10 @@ bot.on("callback_query",async(ctx)=>{
 
     const id=userClientIds[ctx.from.id];
 
-    userStates[ctx.from.id]={
-      step:"range",
-      clientId:id
-    };
+    userStates[ctx.from.id]={ step:"range", clientId:id };
 
     await ctx.answerCbQuery();
     return ctx.reply("Send country");
-
   }
 
   if(data==="new_id"){
@@ -245,11 +225,19 @@ bot.on("callback_query",async(ctx)=>{
 
     await ctx.answerCbQuery();
     return ctx.reply("Enter Lamix Client ID");
-
   }
 
   const state=userStates[ctx.from.id];
-  if(!state) return;
+
+  if(!state){
+    await ctx.answerCbQuery();
+    return ctx.reply("Send country to claim numbers");
+  }
+
+  if(!state.ranges){
+    await ctx.answerCbQuery();
+    return ctx.reply("Send country to search ranges");
+  }
 
   if(data.startsWith("range_")){
 
@@ -262,7 +250,6 @@ bot.on("callback_query",async(ctx)=>{
 
     await ctx.answerCbQuery();
     ctx.reply("Enter quantity (1-20)");
-
   }
 
 });
@@ -286,7 +273,6 @@ bot.on("text",async(ctx)=>{
     state.step="range";
 
     return ctx.reply("Send country");
-
   }
 
   if(state.step==="range"){
@@ -310,13 +296,11 @@ bot.on("text",async(ctx)=>{
       }
 
       buttons.push(row);
-
     }
 
     state.ranges=ranges;
 
     return ctx.reply("Choose Range",Markup.inlineKeyboard(buttons));
-
   }
 
   if(state.step==="qty"){
@@ -355,7 +339,6 @@ bot.on("text",async(ctx)=>{
     delete userStates[ctx.from.id];
 
     processQueue();
-
   }
 
 });
@@ -372,13 +355,9 @@ async function processQueue(){
   const sessionValid=await ensureSession();
 
   if(!sessionValid){
-
     console.log("⚠ Session expired → relogin");
-
     lamixReady=false;
-
     await loginLamix();
-
   }
 
   const payout=getPayout(job.rangeName);
@@ -435,7 +414,8 @@ Payout: ${payout}
 
 Claims today: ${clientClaims[job.client].count}/10
 
-Send country to claim again`
+Send country to claim again`,
+{ reply_markup: { remove_keyboard: true } }
 );
 
       userStates[job.ctx.from.id]={
@@ -445,7 +425,17 @@ Send country to claim again`
 
     }else{
 
-      job.ctx.reply("❌ Allocation failed");
+      job.ctx.reply(
+`❌ No numbers available in this range.
+
+Send another country or select another range.`,
+{ reply_markup: { remove_keyboard: true } }
+);
+
+      userStates[job.ctx.from.id]={
+        step:"range",
+        clientId:job.client
+      };
 
     }
 
@@ -464,15 +454,10 @@ Send country to claim again`
 setInterval(async()=>{
 
   try{
-
     console.log("♻ Refreshing ranges");
-
     await loadAllRanges();
-
   }catch(e){
-
     console.log("Range refresh error",e.message);
-
   }
 
 },600000);
@@ -484,19 +469,13 @@ setInterval(async()=>{
     const valid=await ensureSession();
 
     if(!valid){
-
       console.log("⚠ Session expired → reconnect");
-
       lamixReady=false;
-
       await loginLamix();
-
     }
 
   }catch(e){
-
     console.log("KeepAlive error",e.message);
-
   }
 
 },300000);
