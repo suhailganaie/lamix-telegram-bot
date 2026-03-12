@@ -17,12 +17,12 @@ let page;
 let loggedIn = false;
 
 async function sleep(ms){
-return new Promise(resolve => setTimeout(resolve,ms));
+return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 async function initBrowser(){
 
-console.log("Starting browser");
+console.log("🚀 Starting browser");
 
 browser = await puppeteer.launch({
 args: chromium.args,
@@ -47,7 +47,7 @@ console.log("Already logged in");
 return;
 }
 
-console.log("Opening Lamix login");
+console.log("Opening Lamix login page");
 
 await page.goto(process.env.LAMIX_URL,{
 waitUntil:"networkidle2",
@@ -56,7 +56,7 @@ timeout:60000
 
 await sleep(4000);
 
-console.log("Waiting for username field");
+console.log("Waiting for login inputs");
 
 await page.waitForSelector('input[name="username"]',{timeout:60000});
 
@@ -80,15 +80,15 @@ if(match){
 
 const result = parseInt(match[1]) + parseInt(match[2]);
 
-console.log("Captcha:",match[1],"+",match[2],"=",result);
+console.log(`Captcha solved: ${match[1]} + ${match[2]} = ${result}`);
 
 await page.type('input[name="capt"]',result.toString());
 
 }
 
-console.log("Submitting login");
+console.log("Submitting login form");
 
-await page.click("button");
+await page.click("button[type='submit'],button");
 
 await sleep(5000);
 
@@ -104,13 +104,18 @@ const url = page.url();
 console.log("Bulk page URL:",url);
 
 if(url.includes("login")){
+
 console.log("LOGIN FAILED ❌");
+
+loggedIn = false;
+
 throw new Error("Invalid Lamix credentials");
+
 }
 
 console.log("LOGIN SUCCESS ✅");
 
-loggedIn=true;
+loggedIn = true;
 
 }
 
@@ -269,17 +274,10 @@ const buttons=[];
 
 for(let i=0;i<ranges.length;i+=2){
 
-const row=[
-{text:ranges[i],callback_data:`range_${i}`}
-];
+const row=[{text:ranges[i],callback_data:`range_${i}`}];
 
 if(ranges[i+1]){
-
-row.push({
-text:ranges[i+1],
-callback_data:`range_${i+1}`
-});
-
+row.push({text:ranges[i+1],callback_data:`range_${i+1}`});
 }
 
 buttons.push(row);
@@ -310,36 +308,27 @@ process.env.LAMIX_URL+"/agent/SMSBulkAllocations",
 
 await sleep(3000);
 
-console.log("Filling bulk allocation form");
+console.log("Preparing bulk allocation form");
 
-await page.evaluate((clientId,rangeName,qty)=>{
+/*
+================================================
+SELECTORS WILL BE ADDED HERE NEXT STEP
+================================================
 
-const clientInput = document.querySelector("input[name='client']");
-if(clientInput) clientInput.value = clientId;
+We will replace this block after you send
+the exact HTML selectors from the page.
 
-const qtyInput = document.querySelector("input[name='quantity']");
-if(qtyInput) qtyInput.value = qty;
+Example placeholders:
 
-const rangeSelect = document.querySelector("select[name='range']");
-if(rangeSelect){
+client field
+range dropdown
+quantity field
+allocate button
 
-[...rangeSelect.options].forEach(opt=>{
-if(opt.text.includes(rangeName)){
-rangeSelect.value = opt.value;
-}
-});
+================================================
+*/
 
-}
-
-},clientId,rangeName,qty);
-
-console.log("Submitting bulk allocation");
-
-await page.click("button");
-
-await sleep(4000);
-
-console.log("Allocation submitted");
+console.log("⚠ Waiting for selectors update");
 
 return {success:true};
 
