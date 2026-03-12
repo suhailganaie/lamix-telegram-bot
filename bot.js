@@ -45,7 +45,7 @@ async function ensureSession(){
   try{
 
     await page.goto(
-      process.env.LAMIX_URL+"/ints/agent/SMSBulkAllocations",
+      process.env.LAMIX_URL + "/ints/agent/SMSBulkAllocations",
       {waitUntil:"networkidle2"}
     );
 
@@ -68,7 +68,10 @@ async function loginLamix(){
 
   console.log("🌐 Opening Lamix login");
 
-  await page.goto(process.env.LAMIX_URL,{waitUntil:"networkidle2"});
+  await page.goto(
+    process.env.LAMIX_URL + "/ints/login",
+    {waitUntil:"networkidle2"}
+  );
 
   await page.waitForSelector('input[name="username"]');
 
@@ -83,20 +86,16 @@ async function loginLamix(){
 
     const result = Number(match[1]) + Number(match[2]);
 
-    await page.type('input[name="capt"],input[name="captcha"]',String(result));
+    await page.type('input[name="capt"]',String(result));
 
     console.log("Captcha solved:",result);
 
   }
 
-  await page.click('button[type="submit"],button');
-
-  await sleep(4000);
-
-  await page.goto(
-    process.env.LAMIX_URL+"/ints/agent/SMSBulkAllocations",
-    {waitUntil:"networkidle2"}
-  );
+  await Promise.all([
+    page.click('button'),
+    page.waitForNavigation({waitUntil:"networkidle2"})
+  ]);
 
   console.log("CURRENT URL:", page.url());
 
@@ -114,7 +113,6 @@ async function loadAllRanges(){
 
   ALL_RANGES = [];
 
-  // ensure correct panel page context
   await page.goto(
     process.env.LAMIX_URL + "/ints/agent/SMSBulkAllocations",
     {waitUntil:"networkidle2"}
