@@ -36,7 +36,6 @@ async function initBrowser(){
   page = await browser.newPage();
 
   await page.setViewport({width:1280,height:800});
-
   await page.setUserAgent("Mozilla/5.0");
 
 }
@@ -75,7 +74,6 @@ async function loginLamix(){
   await page.type('input[name="password"]',process.env.LAMIX_PASS,{delay:20});
 
   const body = await page.evaluate(()=>document.body.innerText);
-
   const match = body.match(/(\d+)\s*\+\s*(\d+)/);
 
   if(match){
@@ -115,16 +113,16 @@ async function loadAllRanges(){
 
   while(true){
 
-    const data = await page.evaluate(async(pageNum)=>{
+    const data = await page.evaluate(async(pageNum, base)=>{
 
       const res = await fetch(
-        `/ints/agent/res/aj_smsranges.php?max=25&page=${pageNum}`,
+        base + `/ints/agent/res/aj_smsranges.php?max=25&page=${pageNum}`,
         {headers:{"X-Requested-With":"XMLHttpRequest"}}
       );
 
       return await res.json();
 
-    },pageNum);
+    },pageNum,process.env.LAMIX_URL);
 
     if(!data.results || data.results.length === 0) break;
 
@@ -165,7 +163,6 @@ async function prepareLamix(){
   console.log("🔐 Preparing Lamix");
 
   await loginLamix();
-
   await loadAllRanges();
 
   lamixReady = true;
@@ -196,13 +193,11 @@ Markup.inlineKeyboard([
     }
 
     userStates[ctx.from.id] = {step:"client"};
-
     ctx.reply("Enter Lamix Client ID");
 
   }catch(e){
 
     console.log("Start error:",e.message);
-
     ctx.reply("❌ Failed to connect Lamix");
 
   }
@@ -211,41 +206,41 @@ Markup.inlineKeyboard([
 
 bot.on("text",async(ctx)=>{
 
-  const state = userStates[ctx.from.id];
+  const state=userStates[ctx.from.id];
   if(!state) return;
 
-  const text = ctx.message.text.trim();
+  const text=ctx.message.text.trim();
 
-  if(state.step === "client"){
+  if(state.step==="client"){
 
     if(!clients[text]){
       return ctx.reply("❌ Wrong client ID");
     }
 
-    userClientIds[ctx.from.id] = text;
+    userClientIds[ctx.from.id]=text;
 
-    state.clientId = text;
-    state.step = "range";
+    state.clientId=text;
+    state.step="range";
 
     return ctx.reply("Send country or range");
 
   }
 
-  if(state.step === "range"){
+  if(state.step==="range"){
     return searchRanges(ctx,text);
   }
 
-  if(state.step === "qty"){
+  if(state.step==="qty"){
 
-    const qty = Number(text);
+    const qty=Number(text);
 
-    if(!qty || qty < 1 || qty > 50){
+    if(!qty||qty<1||qty>50){
       return ctx.reply("Quantity must be 1-50");
     }
 
     ctx.reply("Allocating numbers...");
 
-    const res = await allocateNumbers(
+    const res=await allocateNumbers(
       state.clientId,
       state.rangeId,
       qty
@@ -264,48 +259,6 @@ Qty: ${qty}`
 );
 
     delete userStates[ctx.from.id];
-
-  }
-
-});
-
-bot.on("callback_query",async(ctx)=>{
-
-  const data = ctx.callbackQuery.data;
-  const state = userStates[ctx.from.id];
-
-  await ctx.answerCbQuery();
-
-  if(data === "continue"){
-
-    const id = userClientIds[ctx.from.id];
-
-    userStates[ctx.from.id] = {step:"range",clientId:id};
-
-    return ctx.reply("Send country or range");
-
-  }
-
-  if(data === "change"){
-
-    userStates[ctx.from.id] = {step:"client"};
-
-    return ctx.reply("Enter client ID");
-
-  }
-
-  if(data.startsWith("range_")){
-
-    const index = Number(data.split("_")[1]);
-
-    const r = state.ranges[index];
-
-    state.rangeId = r.id;
-    state.rangeName = r.name;
-
-    state.step = "qty";
-
-    return ctx.reply("Enter quantity");
 
   }
 
@@ -337,7 +290,7 @@ function searchRanges(ctx,query){
 
   }
 
-  userStates[ctx.from.id].ranges = ranges;
+  userStates[ctx.from.id].ranges=ranges;
 
   ctx.reply(
     "Choose Range",
@@ -352,13 +305,13 @@ async function allocateNumbers(clientName,rangeId,qty){
     await sleep(300);
   }
 
-  allocationLock = true;
+  allocationLock=true;
 
   try{
 
     await prepareLamix();
 
-    const clientId = clients[clientName];
+    const clientId=clients[clientName];
 
     const payload={
       action:"allocate",
@@ -370,9 +323,9 @@ async function allocateNumbers(clientName,rangeId,qty){
       qty
     };
 
-    const res = await page.evaluate(async(payload)=>{
+    const res=await page.evaluate(async(payload)=>{
 
-      const r = await fetch(
+      const r=await fetch(
         "/ints/agent/SMSBulkAllocations",
         {
           method:"POST",
@@ -387,7 +340,7 @@ async function allocateNumbers(clientName,rangeId,qty){
 
     },payload);
 
-    allocationLock = false;
+    allocationLock=false;
 
     if(res.includes("Well Done")){
       return {success:true};
@@ -401,8 +354,7 @@ async function allocateNumbers(clientName,rangeId,qty){
 
   }catch(e){
 
-    allocationLock = false;
-
+    allocationLock=false;
     return {success:false,message:e.message};
 
   }
