@@ -17,6 +17,10 @@ let loggedIn = false;
 let RANGE_MAP = {};
 let RANGE_LIST = [];
 
+let lamixReady = false;
+let lamixLoginInProgress = false;
+let allocationLock = false;
+
 async function sleep(ms){
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -136,13 +140,45 @@ async function loginLamix(){
 
 }
 
-bot.start((ctx)=>{
+async function prepareLamix(){
 
-  const savedId = userClientIds[ctx.from.id];
+  if(lamixReady){
+    return;
+  }
 
-  if(savedId){
+  if(lamixLoginInProgress){
 
-    ctx.reply(
+    while(lamixLoginInProgress){
+      await sleep(1000);
+    }
+
+    return;
+  }
+
+  lamixLoginInProgress = true;
+
+  console.log("🔐 Preparing Lamix session");
+
+  await loginLamix();
+
+  lamixReady = true;
+  lamixLoginInProgress = false;
+
+}
+
+bot.start(async(ctx)=>{
+
+  try{
+
+    ctx.reply("🔄 Connecting to Lamix...");
+
+    await prepareLamix();
+
+    const savedId = userClientIds[ctx.from.id];
+
+    if(savedId){
+
+      return ctx.reply(
 `👤 Saved Client ID: ${savedId}`,
 Markup.inlineKeyboard([
 [{text:"✅ Continue",callback_data:"continue_id"}],
@@ -150,11 +186,17 @@ Markup.inlineKeyboard([
 ])
 );
 
-  }else{
+    }
+
+    userStates[ctx.from.id] = {step:"waiting_client_id"};
 
     ctx.reply("🔑 Enter Lamix Client ID");
 
-    userStates[ctx.from.id] = {step:"waiting_client_id"};
+  }catch(e){
+
+    console.log("Start error:",e.message);
+
+    ctx.reply("❌ Failed to connect Lamix");
 
   }
 
@@ -169,8 +211,6 @@ bot.on("text",async(ctx)=>{
 
   if(state.step==="waiting_client_id"){
 
-    console.log("Client received:",text);
-
     if(!clients[text]){
       return ctx.reply("❌ Wrong client ID");
     }
@@ -180,7 +220,7 @@ bot.on("text",async(ctx)=>{
     state.clientId = text;
     state.step = "choose_country";
 
-    return ctx.reply("🌍 Send country name");
+    return ctx.reply("🌍 Send country or range");
 
   }
 
@@ -239,7 +279,7 @@ bot.on("callback_query",async(ctx)=>{
 
     userStates[ctx.from.id] = {step:"choose_country",clientId};
 
-    return ctx.reply("🌍 Send country name");
+    return ctx.reply("🌍 Send country or range");
 
   }
 
@@ -315,23 +355,26 @@ Markup.inlineKeyboard(buttons)
 
 async function allocateNumbers(clientName,rangeName,qty){
 
+  while(allocationLock){
+    await sleep(1000);
+  }
+
+  allocationLock = true;
+
   try{
 
-    console.log("------------------------------------------------");
-    console.log("📦 FAST ALLOCATION");
-    console.log("Client:",clientName);
-    console.log("Range:",rangeName);
-
-    await loginLamix();
+    await prepareLamix();
 
     const rangeId = RANGE_MAP[rangeName];
     const clientId = clients[clientName];
 
     if(!rangeId){
+      allocationLock=false;
       return {success:false,message:"Range not found"};
     }
 
     if(!clientId){
+      allocationLock=false;
       return {success:false,message:"Client not found"};
     }
 
@@ -359,8 +402,9 @@ async function allocateNumbers(clientName,rangeName,qty){
 
     },payload);
 
+    allocationLock=false;
+
     if(response.includes("Well Done")){
-      console.log("✅ Allocation success");
       return {success:true};
     }
 
@@ -372,7 +416,7 @@ async function allocateNumbers(clientName,rangeName,qty){
 
   }catch(e){
 
-    console.log("❌ ERROR:",e.message);
+    allocationLock=false;
     loggedIn=false;
 
     return {success:false,message:e.message};
@@ -380,6 +424,32 @@ async function allocateNumbers(clientName,rangeName,qty){
   }
 
 }
+
+setInterval(async()=>{
+
+  try{
+
+    console.log("🔄 Keeping Lamix session alive");
+
+    const valid = await ensureSession();
+
+    if(!valid){
+
+      console.log("Session expired → reconnecting");
+
+      lamixReady=false;
+
+      await prepareLamix();
+
+    }
+
+  }catch(e){
+
+    console.log("Keep alive error:",e.message);
+
+  }
+
+},600000);
 
 bot.catch((err,ctx)=>{
   console.error("BOT ERROR:",err);
