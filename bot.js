@@ -275,7 +275,7 @@ async function searchRanges(ctx,query){
     const ranges=await page.evaluate(async(query)=>{
 
       const res=await fetch(
-        `/ints/agent/res/aj_smsranges.php?q=${encodeURIComponent(query)}&page=1`,
+        `/ints/agent/res/aj_smsranges.php?max=25&page=1&search=${encodeURIComponent(query)}`,
         {headers:{"X-Requested-With":"XMLHttpRequest"}}
       );
 
