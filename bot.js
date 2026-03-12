@@ -49,10 +49,25 @@ async function fetchRanges(){
 
   console.log("📡 Fetching ranges from Lamix");
 
-  const response = await page.evaluate(async ()=>{
-    const res = await fetch("/ints/agent/aj_smsranges.php?max=1000&page=1");
-    return await res.json();
-  });
+  const response = await page.evaluate(async (base)=>{
+
+    const url = base + "/ints/agent/aj_smsranges.php?max=1000&page=1";
+
+    const res = await fetch(url);
+
+    const text = await res.text();
+
+    try{
+      return JSON.parse(text);
+    }catch(e){
+      return {error:text};
+    }
+
+  }, process.env.LAMIX_URL);
+
+  if(response.error){
+    throw new Error("Range API error: " + response.error);
+  }
 
   RANGE_MAP = {};
   RANGE_LIST = [];
@@ -110,6 +125,7 @@ async function loginLamix(){
   console.log("🧠 Solving captcha");
 
   const bodyText = await page.evaluate(()=>document.body.innerText);
+
   const match = bodyText.match(/(\d+)\s*\+\s*(\d+)/);
 
   if(match){
@@ -126,7 +142,7 @@ async function loginLamix(){
 
   await sleep(4000);
 
-  await page.goto(process.env.LAMIX_URL+"/agent/SMSBulkAllocations",{waitUntil:"networkidle2"});
+  await page.goto(process.env.LAMIX_URL + "/agent/SMSBulkAllocations",{waitUntil:"networkidle2"});
 
   if(page.url().includes("login")){
     throw new Error("Lamix login failed");
@@ -153,6 +169,7 @@ async function prepareLamix(){
     }
 
     return;
+
   }
 
   lamixLoginInProgress = true;
@@ -207,7 +224,7 @@ bot.on("text",async(ctx)=>{
   const state = userStates[ctx.from.id];
   if(!state) return;
 
-  let text = ctx.message.text.trim();
+  const text = ctx.message.text.trim();
 
   if(state.step==="waiting_client_id"){
 
@@ -218,15 +235,13 @@ bot.on("text",async(ctx)=>{
     userClientIds[ctx.from.id] = text;
 
     state.clientId = text;
-    state.step = "choose_country";
+    state.step = "choose_range";
 
-    return ctx.reply("🌍 Send country or range");
+    return ctx.reply("🔎 Send country or range");
 
   }
 
-  if(state.step==="choose_country"){
-
-    state.step = "choose_range";
+  if(state.step==="choose_range"){
 
     return sendRanges(ctx,text);
 
@@ -277,9 +292,9 @@ bot.on("callback_query",async(ctx)=>{
 
     const clientId = userClientIds[ctx.from.id];
 
-    userStates[ctx.from.id] = {step:"choose_country",clientId};
+    userStates[ctx.from.id] = {step:"choose_range",clientId};
 
-    return ctx.reply("🌍 Send country or range");
+    return ctx.reply("🔎 Send country or range");
 
   }
 
@@ -320,11 +335,7 @@ function sendRanges(ctx,input){
 
   if(ranges.length===0){
 
-    userStates[ctx.from.id].step="choose_country";
-
-    return ctx.reply(
-"❌ No ranges found\n\nSend another country or range"
-);
+    return ctx.reply("❌ No ranges found\n\nSend another range");
 
   }
 
@@ -388,9 +399,11 @@ async function allocateNumbers(clientName,rangeName,qty){
       qty:qty
     };
 
-    const response = await page.evaluate(async(payload)=>{
+    const response = await page.evaluate(async(payload,base)=>{
 
-      const res = await fetch("/ints/agent/SMSBulkAllocations",{
+      const url = base + "/ints/agent/SMSBulkAllocations";
+
+      const res = await fetch(url,{
         method:"POST",
         headers:{
           "Content-Type":"application/x-www-form-urlencoded"
@@ -400,7 +413,7 @@ async function allocateNumbers(clientName,rangeName,qty){
 
       return await res.text();
 
-    },payload);
+    },payload,process.env.LAMIX_URL);
 
     allocationLock=false;
 
@@ -434,8 +447,6 @@ setInterval(async()=>{
     const valid = await ensureSession();
 
     if(!valid){
-
-      console.log("Session expired → reconnecting");
 
       lamixReady=false;
 
