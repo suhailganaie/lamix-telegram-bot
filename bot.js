@@ -43,11 +43,11 @@ await page.setViewport({ width:1280, height:800 });
 async function loginLamix(){
 
 if(loggedIn){
-console.log("Already logged in");
+console.log("✅ Already logged in");
 return;
 }
 
-console.log("Opening Lamix login page");
+console.log("🌐 Opening Lamix login page");
 
 await page.goto(process.env.LAMIX_URL,{
 waitUntil:"networkidle2",
@@ -56,21 +56,21 @@ timeout:60000
 
 await sleep(4000);
 
-console.log("Waiting for login inputs");
+console.log("⌛ Waiting for username field");
 
 await page.waitForSelector('input[name="username"]',{timeout:60000});
 
-console.log("Typing username");
+console.log("✏ Typing username");
 
 await page.focus('input[name="username"]');
 await page.keyboard.type(process.env.LAMIX_USER,{delay:40});
 
-console.log("Typing password");
+console.log("✏ Typing password");
 
 await page.focus('input[name="password"]');
 await page.keyboard.type(process.env.LAMIX_PASS,{delay:40});
 
-console.log("Solving captcha");
+console.log("🧠 Solving captcha");
 
 const bodyText = await page.evaluate(()=>document.body.innerText);
 
@@ -86,13 +86,13 @@ await page.type('input[name="capt"]',result.toString());
 
 }
 
-console.log("Submitting login form");
+console.log("🚀 Clicking LOGIN button");
 
 await page.click("button[type='submit'],button");
 
 await sleep(5000);
 
-console.log("Checking bulk allocation page");
+console.log("🔎 Checking login status");
 
 await page.goto(
 process.env.LAMIX_URL+"/agent/SMSBulkAllocations",
@@ -101,21 +101,21 @@ process.env.LAMIX_URL+"/agent/SMSBulkAllocations",
 
 const url = page.url();
 
-console.log("Bulk page URL:",url);
+console.log("Current URL:",url);
 
 if(url.includes("login")){
 
-console.log("LOGIN FAILED ❌");
+console.log("❌ LOGIN FAILED");
 
-loggedIn = false;
+loggedIn=false;
 
 throw new Error("Invalid Lamix credentials");
 
 }
 
-console.log("LOGIN SUCCESS ✅");
+console.log("✅ LOGIN SUCCESS");
 
-loggedIn = true;
+loggedIn=true;
 
 }
 
@@ -154,7 +154,7 @@ const text=ctx.message.text.trim();
 if(state.step==="waiting_client_id"){
 
 if(!clients.includes(text))
-return ctx.reply("❌ Wrong client ID. Please enter your ID.");
+return ctx.reply("❌ Wrong client ID");
 
 userClientIds[ctx.from.id]=text;
 
@@ -172,7 +172,7 @@ c=>c.toLowerCase()===text.toLowerCase()
 );
 
 if(!realCountry)
-return ctx.reply("❌ Wrong country please send the country");
+return ctx.reply("❌ Wrong country");
 
 state.country=realCountry;
 state.step="choose_range";
@@ -206,7 +206,6 @@ ctx.reply(
 Client: ${state.clientId}
 Country: ${state.country}
 Range: ${state.rangeName}
-
 Quantity: ${qty}`
 );
 
@@ -297,9 +296,16 @@ async function allocateNumbers(clientId,country,rangeName,qty){
 
 try{
 
+console.log("------------------------------------------------");
+console.log("📦 STARTING ALLOCATION");
+console.log("Client:",clientId);
+console.log("Country:",country);
+console.log("Range:",rangeName);
+console.log("Quantity:",qty);
+
 await loginLamix();
 
-console.log("Opening Bulk Allocation page");
+console.log("🌐 Opening Bulk Allocation page");
 
 await page.goto(
 process.env.LAMIX_URL+"/agent/SMSBulkAllocations",
@@ -308,33 +314,104 @@ process.env.LAMIX_URL+"/agent/SMSBulkAllocations",
 
 await sleep(3000);
 
-console.log("Preparing bulk allocation form");
+console.log("🔎 Selecting range dropdown");
 
-/*
-================================================
-SELECTORS WILL BE ADDED HERE NEXT STEP
-================================================
+await page.click(".select2-selection");
 
-We will replace this block after you send
-the exact HTML selectors from the page.
+await sleep(1000);
 
-Example placeholders:
+console.log("⌨ Typing range:",rangeName);
 
-client field
-range dropdown
-quantity field
-allocate button
+await page.keyboard.type(rangeName,{delay:40});
 
-================================================
-*/
+await sleep(2000);
 
-console.log("⚠ Waiting for selectors update");
+const noResults = await page.evaluate(()=>{
+return document.body.innerText.includes("No results found");
+});
+
+if(noResults){
+
+console.log("❌ Range not available");
+
+return {
+success:false,
+message:"Range not available"
+};
+
+}
+
+console.log("✅ Range found");
+
+await page.keyboard.press("Enter");
+
+await sleep(2000);
+
+console.log("🔎 Selecting client dropdown");
+
+const selects = await page.$$(".select2-selection");
+
+if(selects.length>1){
+await selects[1].click();
+}else{
+return {success:false,message:"Client selector not found"};
+}
+
+await sleep(1000);
+
+console.log("⌨ Typing client:",clientId);
+
+await page.keyboard.type(clientId,{delay:40});
+
+await sleep(2000);
+
+await page.keyboard.press("Enter");
+
+await sleep(2000);
+
+console.log("✏ Typing quantity");
+
+await page.type('input[type="number"],input[name="quantity"]',qty.toString());
+
+await sleep(1000);
+
+console.log("🚀 Clicking Allocate");
+
+await page.click("button[type='submit'],button");
+
+await sleep(5000);
+
+const text = await page.evaluate(()=>document.body.innerText);
+
+if(text.toLowerCase().includes("success")){
+
+console.log("✅ ALLOCATION SUCCESS");
 
 return {success:true};
 
+}
+
+if(text.toLowerCase().includes("no numbers")){
+
+console.log("❌ NO NUMBERS AVAILABLE");
+
+return {
+success:false,
+message:"No numbers available"
+};
+
+}
+
+console.log("⚠ Unknown panel response");
+
+return {
+success:false,
+message:"Unknown panel response"
+};
+
 }catch(e){
 
-console.log("ERROR:",e.message);
+console.log("❌ ERROR:",e.message);
 
 loggedIn=false;
 
@@ -352,6 +429,6 @@ await initBrowser();
 
 bot.launch({dropPendingUpdates:true});
 
-console.log("🚀 Lamix Bot Running");
+console.log("🤖 Lamix Bot Running");
 
 })();
