@@ -4,17 +4,18 @@ const chromium = require("@sparticuz/chromium");
 require("dotenv").config();
 
 const clients = require("./clients.json").clients;
-const RANGES = require("./ranges.json");
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
 const userStates = {};
 const userClientIds = {};
-const COUNTRIES = Object.keys(RANGES);
 
 let browser;
 let page;
 let loggedIn = false;
+
+let RANGE_MAP = {};
+let RANGE_LIST = [];
 
 async function sleep(ms){
 return new Promise(resolve => setTimeout(resolve, ms));
@@ -40,6 +41,30 @@ await page.setViewport({ width:1280, height:800 });
 
 }
 
+async function fetchRanges(){
+
+console.log("📡 Fetching ranges from Lamix");
+
+const response = await page.evaluate(async ()=>{
+
+const res = await fetch("/ints/agent/aj_smsranges.php?max=1000&page=1");
+return await res.json();
+
+});
+
+RANGE_MAP = {};
+RANGE_LIST = [];
+
+response.results.forEach(r=>{
+const name = r.title.trim().replace(/^-\s*/,"");
+RANGE_MAP[name] = r.id;
+RANGE_LIST.push(name);
+});
+
+console.log("✅ Total ranges loaded:",RANGE_LIST.length);
+
+}
+
 async function loginLamix(){
 
 if(loggedIn){
@@ -47,7 +72,7 @@ console.log("✅ Already logged in");
 return;
 }
 
-console.log("🌐 Opening Lamix login page");
+console.log("🌐 Opening Lamix login");
 
 await page.goto(process.env.LAMIX_URL,{
 waitUntil:"networkidle2",
@@ -56,19 +81,10 @@ timeout:60000
 
 await sleep(4000);
 
-console.log("⌛ Waiting for username field");
+await page.waitForSelector('input[name="username"]');
 
-await page.waitForSelector('input[name="username"]',{timeout:60000});
-
-console.log("✏ Typing username");
-
-await page.focus('input[name="username"]');
-await page.keyboard.type(process.env.LAMIX_USER,{delay:40});
-
-console.log("✏ Typing password");
-
-await page.focus('input[name="password"]');
-await page.keyboard.type(process.env.LAMIX_PASS,{delay:40});
+await page.type('input[name="username"]',process.env.LAMIX_USER,{delay:40});
+await page.type('input[name="password"]',process.env.LAMIX_PASS,{delay:40});
 
 console.log("🧠 Solving captcha");
 
@@ -80,42 +96,27 @@ if(match){
 
 const result = parseInt(match[1]) + parseInt(match[2]);
 
-console.log(`Captcha solved: ${match[1]} + ${match[2]} = ${result}`);
-
 await page.type('input[name="capt"]',result.toString());
+
+console.log(`Captcha: ${match[1]} + ${match[2]} = ${result}`);
 
 }
 
-console.log("🚀 Clicking LOGIN button");
-
-await page.click("button[type='submit'],button");
+await page.click("button");
 
 await sleep(5000);
 
-console.log("🔎 Checking login status");
+await page.goto(process.env.LAMIX_URL+"/agent/SMSBulkAllocations",{waitUntil:"networkidle2"});
 
-await page.goto(
-process.env.LAMIX_URL+"/agent/SMSBulkAllocations",
-{waitUntil:"networkidle2"}
-);
-
-const url = page.url();
-
-console.log("Current URL:",url);
-
-if(url.includes("login")){
-
-console.log("❌ LOGIN FAILED");
-
-loggedIn=false;
-
-throw new Error("Invalid Lamix credentials");
-
+if(page.url().includes("login")){
+throw new Error("Lamix login failed");
 }
 
 console.log("✅ LOGIN SUCCESS");
 
-loggedIn=true;
+loggedIn = true;
+
+await fetchRanges();
 
 }
 
@@ -126,19 +127,18 @@ const savedId = userClientIds[ctx.from.id];
 if(savedId){
 
 ctx.reply(
-`👤 Your saved Client ID: ${savedId}
-
-What would you like to do?`,
+`👤 Your saved Client ID: ${savedId}`,
 Markup.inlineKeyboard([
-[{text:"✅ Continue with this ID",callback_data:"continue_id"}],
-[{text:"🔄 Change Client ID",callback_data:"change_id"}]
+[{text:"✅ Continue",callback_data:"continue_id"}],
+[{text:"🔄 Change ID",callback_data:"change_id"}]
 ])
 );
 
 }else{
 
 ctx.reply("🔑 Enter Lamix Client ID");
-userStates[ctx.from.id]={step:"waiting_client_id"};
+
+userStates[ctx.from.id] = {step:"waiting_client_id"};
 
 }
 
@@ -146,47 +146,40 @@ userStates[ctx.from.id]={step:"waiting_client_id"};
 
 bot.on("text",async(ctx)=>{
 
-const state=userStates[ctx.from.id];
+const state = userStates[ctx.from.id];
 if(!state) return;
 
-const text=ctx.message.text.trim();
+const text = ctx.message.text.trim();
 
 if(state.step==="waiting_client_id"){
 
-if(!clients.includes(text))
+if(!clients[text])
 return ctx.reply("❌ Wrong client ID");
 
-userClientIds[ctx.from.id]=text;
+userClientIds[ctx.from.id] = text;
 
-state.clientId=text;
-state.step="choose_country";
+state.clientId = text;
+state.step = "choose_country";
 
-return ctx.reply("🌍 Send the country name");
+return ctx.reply("🌍 Send country name");
 
 }
 
 if(state.step==="choose_country"){
 
-const realCountry=COUNTRIES.find(
-c=>c.toLowerCase()===text.toLowerCase()
-);
+state.country = text;
+state.step = "choose_range";
 
-if(!realCountry)
-return ctx.reply("❌ Wrong country");
-
-state.country=realCountry;
-state.step="choose_range";
-
-return sendRanges(ctx,realCountry);
+return sendRanges(ctx,text);
 
 }
 
 if(state.step==="quantity"){
 
-const qty=parseInt(text);
+const qty = parseInt(text);
 
-if(isNaN(qty)||qty<5||qty>50)
-return ctx.reply("❌ Enter quantity between 5 and 50");
+if(isNaN(qty)||qty<1||qty>50)
+return ctx.reply("❌ Quantity 1-50");
 
 ctx.reply("⏳ Allocating numbers...");
 
@@ -204,7 +197,6 @@ ctx.reply(
 `✅ Allocation Success
 
 Client: ${state.clientId}
-Country: ${state.country}
 Range: ${state.rangeName}
 Quantity: ${qty}`
 );
@@ -217,8 +209,8 @@ delete userStates[ctx.from.id];
 
 bot.on("callback_query",async(ctx)=>{
 
-const data=ctx.callbackQuery.data;
-const state=userStates[ctx.from.id];
+const data = ctx.callbackQuery.data;
+const state = userStates[ctx.from.id];
 
 await ctx.answerCbQuery();
 
@@ -226,12 +218,9 @@ if(data==="continue_id"){
 
 const clientId=userClientIds[ctx.from.id];
 
-userStates[ctx.from.id]={
-step:"choose_country",
-clientId
-};
+userStates[ctx.from.id]={step:"choose_country",clientId};
 
-return ctx.reply("🌍 Send the country name");
+return ctx.reply("🌍 Send country name");
 
 }
 
@@ -239,7 +228,7 @@ if(data==="change_id"){
 
 userStates[ctx.from.id]={step:"waiting_client_id"};
 
-return ctx.reply("🔑 Enter new Lamix Client ID");
+return ctx.reply("🔑 Enter new client ID");
 
 }
 
@@ -247,20 +236,10 @@ if(!state) return;
 
 if(data.startsWith("range_")){
 
-const index=parseInt(data.split("_")[1]);
-
-state.rangeName=RANGES[state.country][index];
+state.rangeName=data.replace("range_","");
 state.step="quantity";
 
-return ctx.reply("📦 How many numbers? (5-50)");
-
-}
-
-if(data==="back_country"){
-
-state.step="choose_country";
-
-return ctx.reply("🌍 Send the country name");
+return ctx.reply("📦 Enter quantity");
 
 }
 
@@ -268,22 +247,26 @@ return ctx.reply("🌍 Send the country name");
 
 function sendRanges(ctx,country){
 
-const ranges=RANGES[country];
+const ranges = RANGE_LIST.filter(r =>
+r.toLowerCase().includes(country.toLowerCase())
+);
+
+if(ranges.length===0)
+return ctx.reply("❌ No ranges found");
+
 const buttons=[];
 
 for(let i=0;i<ranges.length;i+=2){
 
-const row=[{text:ranges[i],callback_data:`range_${i}`}];
+const row=[{text:ranges[i],callback_data:`range_${ranges[i]}`}];
 
 if(ranges[i+1]){
-row.push({text:ranges[i+1],callback_data:`range_${i+1}`});
+row.push({text:ranges[i+1],callback_data:`range_${ranges[i+1]}`});
 }
 
 buttons.push(row);
 
 }
-
-buttons.push([{text:"⬅ Back",callback_data:"back_country"}]);
 
 return ctx.reply(
 `📱 Choose Range (${country})`,
@@ -292,127 +275,64 @@ Markup.inlineKeyboard(buttons)
 
 }
 
-async function allocateNumbers(clientId,country,rangeName,qty){
+async function allocateNumbers(clientName,country,rangeName,qty){
 
 try{
 
 console.log("------------------------------------------------");
-console.log("📦 STARTING ALLOCATION");
-console.log("Client:",clientId);
-console.log("Country:",country);
+console.log("📦 FAST ALLOCATION");
+console.log("Client:",clientName);
 console.log("Range:",rangeName);
-console.log("Quantity:",qty);
 
 await loginLamix();
 
-console.log("🌐 Opening Bulk Allocation page");
+const rangeId = RANGE_MAP[rangeName];
+const clientId = clients[clientName];
 
-await page.goto(
-process.env.LAMIX_URL+"/agent/SMSBulkAllocations",
-{waitUntil:"networkidle2"}
-);
+if(!rangeId)
+return {success:false,message:"Range not found"};
 
-await sleep(3000);
+if(!clientId)
+return {success:false,message:"Client not found"};
 
-console.log("🔎 Selecting range dropdown");
+const payload = {
+action:"allocate",
+ntype:"-2",
+"range[]":rangeId,
+"client[]":clientId,
+payterm:"9",
+payout:"0.011",
+qty:qty
+};
 
-await page.click(".select2-selection");
+const response = await page.evaluate(async(payload)=>{
 
-await sleep(1000);
-
-console.log("⌨ Typing range:",rangeName);
-
-await page.keyboard.type(rangeName,{delay:40});
-
-await sleep(2000);
-
-const noResults = await page.evaluate(()=>{
-return document.body.innerText.includes("No results found");
+const res = await fetch("/ints/agent/SMSBulkAllocations",{
+method:"POST",
+headers:{
+"Content-Type":"application/x-www-form-urlencoded"
+},
+body:new URLSearchParams(payload)
 });
 
-if(noResults){
+return await res.text();
 
-console.log("❌ Range not available");
+},payload);
 
-return {
-success:false,
-message:"Range not available"
-};
-
-}
-
-console.log("✅ Range found");
-
-await page.keyboard.press("Enter");
-
-await sleep(2000);
-
-console.log("🔎 Selecting client dropdown");
-
-const selects = await page.$$(".select2-selection");
-
-if(selects.length>1){
-await selects[1].click();
-}else{
-return {success:false,message:"Client selector not found"};
-}
-
-await sleep(1000);
-
-console.log("⌨ Typing client:",clientId);
-
-await page.keyboard.type(clientId,{delay:40});
-
-await sleep(2000);
-
-await page.keyboard.press("Enter");
-
-await sleep(2000);
-
-console.log("✏ Typing quantity");
-
-await page.type('input[type="number"],input[name="quantity"]',qty.toString());
-
-await sleep(1000);
-
-console.log("🚀 Clicking Allocate");
-
-await page.click("button[type='submit'],button");
-
-await sleep(5000);
-
-const text = await page.evaluate(()=>document.body.innerText);
-
-if(text.toLowerCase().includes("success")){
-
-console.log("✅ ALLOCATION SUCCESS");
-
+if(response.includes("Well Done")){
+console.log("✅ Allocation success");
 return {success:true};
-
 }
 
-if(text.toLowerCase().includes("no numbers")){
-
-console.log("❌ NO NUMBERS AVAILABLE");
-
-return {
-success:false,
-message:"No numbers available"
-};
-
+if(response.toLowerCase().includes("no numbers")){
+return {success:false,message:"No numbers available"};
 }
 
-console.log("⚠ Unknown panel response");
-
-return {
-success:false,
-message:"Unknown panel response"
-};
+return {success:false,message:"Panel rejected request"};
 
 }catch(e){
 
 console.log("❌ ERROR:",e.message);
-
 loggedIn=false;
 
 return {success:false,message:e.message};
