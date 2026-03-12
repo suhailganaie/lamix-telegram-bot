@@ -50,8 +50,8 @@ waitUntil:"networkidle2",
 timeout:60000
 });
 
-await page.waitForTimeout(4000);
 
+await new Promise(resolve => setTimeout(resolve, 4000));
 console.log("Waiting for username field");
 
 await page.waitForSelector('input[name="username"]',{timeout:60000});
@@ -86,7 +86,7 @@ console.log("Submitting login");
 
 await page.click("button");
 
-await page.waitForTimeout(5000);
+await new Promise(resolve => setTimeout(resolve, 4000));
 
 const url = page.url();
 
