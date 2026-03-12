@@ -16,7 +16,11 @@ let browser;
 let page;
 let loggedIn = false;
 
-async function initBrowser() {
+async function sleep(ms){
+return new Promise(resolve => setTimeout(resolve,ms));
+}
+
+async function initBrowser(){
 
 console.log("Starting browser");
 
@@ -50,8 +54,8 @@ waitUntil:"networkidle2",
 timeout:60000
 });
 
+await sleep(4000);
 
-await new Promise(resolve => setTimeout(resolve, 4000));
 console.log("Waiting for username field");
 
 await page.waitForSelector('input[name="username"]',{timeout:60000});
@@ -86,19 +90,27 @@ console.log("Submitting login");
 
 await page.click("button");
 
-await new Promise(resolve => setTimeout(resolve, 4000));
+await sleep(5000);
+
+console.log("Checking bulk allocation page");
+
+await page.goto(
+process.env.LAMIX_URL+"/agent/SMSBulkAllocations",
+{waitUntil:"networkidle2"}
+);
 
 const url = page.url();
 
-console.log("Current URL:",url);
+console.log("Bulk page URL:",url);
 
 if(url.includes("login")){
-throw new Error("Lamix login failed");
+console.log("LOGIN FAILED ❌");
+throw new Error("Invalid Lamix credentials");
 }
 
-console.log("LOGIN SUCCESS");
+console.log("LOGIN SUCCESS ✅");
 
-loggedIn = true;
+loggedIn=true;
 
 }
 
@@ -190,8 +202,7 @@ Client: ${state.clientId}
 Country: ${state.country}
 Range: ${state.rangeName}
 
-Numbers:
-${result.numbers.join("\n")}`
+Quantity: ${qty}`
 );
 
 delete userStates[ctx.from.id];
@@ -290,47 +301,47 @@ try{
 
 await loginLamix();
 
-console.log("Opening numbers page");
+console.log("Opening Bulk Allocation page");
 
-await page.goto(process.env.LAMIX_URL+"/numbers",{
-waitUntil:"networkidle2"
+await page.goto(
+process.env.LAMIX_URL+"/agent/SMSBulkAllocations",
+{waitUntil:"networkidle2"}
+);
+
+await sleep(3000);
+
+console.log("Filling bulk allocation form");
+
+await page.evaluate((clientId,rangeName,qty)=>{
+
+const clientInput = document.querySelector("input[name='client']");
+if(clientInput) clientInput.value = clientId;
+
+const qtyInput = document.querySelector("input[name='quantity']");
+if(qtyInput) qtyInput.value = qty;
+
+const rangeSelect = document.querySelector("select[name='range']");
+if(rangeSelect){
+
+[...rangeSelect.options].forEach(opt=>{
+if(opt.text.includes(rangeName)){
+rangeSelect.value = opt.value;
+}
 });
 
-console.log("Opening range:",rangeName);
+}
 
-await page.evaluate((rangeName)=>{
+},clientId,rangeName,qty);
 
-const el=[...document.querySelectorAll("*")]
-.find(e=>e.textContent.includes(rangeName));
+console.log("Submitting bulk allocation");
 
-if(el) el.click();
+await page.click("button");
 
-},rangeName);
+await sleep(4000);
 
-await page.waitForTimeout(2000);
+console.log("Allocation submitted");
 
-console.log("Collecting numbers");
-
-const numbers = await page.evaluate(()=>{
-
-const rows=[...document.querySelectorAll("tr")];
-
-return rows
-.filter(r=>!r.innerText.toLowerCase().includes("allocated"))
-.map(r=>r.innerText.trim())
-.filter(t=>/\d{8,}/.test(t));
-
-});
-
-console.log("Numbers found:",numbers.length);
-
-if(numbers.length===0)
-return {success:false,message:"No free numbers"};
-
-return{
-success:true,
-numbers:numbers.slice(0,qty)
-};
+return {success:true};
 
 }catch(e){
 
@@ -338,7 +349,7 @@ console.log("ERROR:",e.message);
 
 loggedIn=false;
 
-return{success:false,message:e.message};
+return {success:false,message:e.message};
 
 }
 
