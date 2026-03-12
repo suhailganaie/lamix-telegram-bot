@@ -49,6 +49,8 @@ async function ensureSession(){
       {waitUntil:"networkidle2"}
     );
 
+    console.log("CURRENT URL:", page.url());
+
     return !page.url().includes("login");
 
   }catch{
@@ -96,6 +98,8 @@ async function loginLamix(){
     {waitUntil:"networkidle2"}
   );
 
+  console.log("CURRENT URL:", page.url());
+
   if(page.url().includes("login")){
     throw new Error("Lamix login failed");
   }
@@ -110,22 +114,37 @@ async function loadAllRanges(){
 
   ALL_RANGES = [];
 
+  // ensure correct panel page context
+  await page.goto(
+    process.env.LAMIX_URL + "/ints/agent/SMSBulkAllocations",
+    {waitUntil:"networkidle2"}
+  );
+
+  console.log("CURRENT URL:", page.url());
+
   let pageNum = 1;
 
   while(true){
 
     console.log("Loading page",pageNum);
 
-    const text = await page.evaluate(async(pageNum,base)=>{
+    const text = await page.evaluate(async(pageNum)=>{
 
       const res = await fetch(
-        base + `/ints/agent/res/aj_smsranges.php?max=25&page=${pageNum}`,
-        {headers:{"X-Requested-With":"XMLHttpRequest"}}
+        `/ints/agent/res/aj_smsranges.php?max=25&page=${pageNum}`,
+        {
+          method:"GET",
+          headers:{
+            "X-Requested-With":"XMLHttpRequest",
+            "Accept":"*/*"
+          },
+          credentials:"include"
+        }
       );
 
       return await res.text();
 
-    },pageNum,process.env.LAMIX_URL);
+    },pageNum);
 
     if(text.startsWith("<")){
       throw new Error("Lamix returned HTML instead of JSON");
@@ -133,17 +152,14 @@ async function loadAllRanges(){
 
     const data = JSON.parse(text);
 
-    if(!data.results || data.results.length===0) break;
+    if(!data.results || data.results.length === 0) break;
 
     data.results.forEach(r=>{
-
       const name = r.title.trim().replace(/^-\s*/,"");
-
       ALL_RANGES.push({
         id:r.id,
         name
       });
-
     });
 
     if(!data.pagination || !data.pagination.more) break;
@@ -175,11 +191,9 @@ async function prepareLamix(){
   console.log("🔐 Preparing Lamix");
 
   await loginLamix();
-
   await loadAllRanges();
 
   lamixReady=true;
-
   lamixLoginInProgress=false;
 
 }
@@ -199,7 +213,6 @@ bot.start(async(ctx)=>{
   }catch(e){
 
     console.log("Start error:",e.message);
-
     ctx.reply("❌ Failed to connect Lamix");
 
   }
