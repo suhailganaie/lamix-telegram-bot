@@ -18,182 +18,210 @@ let RANGE_MAP = {};
 let RANGE_LIST = [];
 
 async function sleep(ms){
-return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 async function initBrowser(){
 
-console.log("🚀 Starting browser");
+  console.log("🚀 Starting browser");
 
-browser = await puppeteer.launch({
-args: chromium.args,
-executablePath: await chromium.executablePath(),
-headless: chromium.headless
-});
+  browser = await puppeteer.launch({
+    args: chromium.args,
+    executablePath: await chromium.executablePath(),
+    headless: chromium.headless
+  });
 
-page = await browser.newPage();
+  page = await browser.newPage();
 
-await page.setUserAgent(
-"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
-);
+  await page.setUserAgent(
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
+  );
 
-await page.setViewport({ width:1280, height:800 });
+  await page.setViewport({ width:1280, height:800 });
 
 }
 
 async function fetchRanges(){
 
-console.log("📡 Fetching ranges from Lamix");
+  console.log("📡 Fetching ranges from Lamix");
 
-const response = await page.evaluate(async ()=>{
+  const response = await page.evaluate(async ()=>{
+    const res = await fetch("/ints/agent/aj_smsranges.php?max=1000&page=1");
+    return await res.json();
+  });
 
-const res = await fetch("/ints/agent/aj_smsranges.php?max=1000&page=1");
-return await res.json();
+  RANGE_MAP = {};
+  RANGE_LIST = [];
 
-});
+  response.results.forEach(r=>{
+    const name = r.title.trim().replace(/^-\s*/,"");
+    RANGE_MAP[name] = r.id;
+    RANGE_LIST.push(name);
+  });
 
-RANGE_MAP = {};
-RANGE_LIST = [];
+  console.log("✅ Ranges loaded:", RANGE_LIST.length);
 
-response.results.forEach(r=>{
-const name = r.title.trim().replace(/^-\s*/,"");
-RANGE_MAP[name] = r.id;
-RANGE_LIST.push(name);
-});
+}
 
-console.log("✅ Total ranges loaded:",RANGE_LIST.length);
+async function ensureSession(){
+
+  try{
+
+    await page.goto(process.env.LAMIX_URL + "/agent/SMSBulkAllocations",{waitUntil:"networkidle2"});
+
+    if(!page.url().includes("login")){
+      console.log("✅ Session still valid");
+      loggedIn = true;
+      return true;
+    }
+
+    loggedIn = false;
+    return false;
+
+  }catch(e){
+
+    loggedIn = false;
+    return false;
+
+  }
 
 }
 
 async function loginLamix(){
 
-if(loggedIn){
-console.log("✅ Already logged in");
-return;
-}
+  if(await ensureSession()){
+    return;
+  }
 
-console.log("🌐 Opening Lamix login");
+  console.log("🌐 Opening Lamix login");
 
-await page.goto(process.env.LAMIX_URL,{
-waitUntil:"networkidle2",
-timeout:60000
-});
+  await page.goto(process.env.LAMIX_URL,{waitUntil:"networkidle2"});
 
-await sleep(4000);
+  await sleep(3000);
 
-await page.waitForSelector('input[name="username"]');
+  await page.waitForSelector('input[name="username"]');
 
-await page.type('input[name="username"]',process.env.LAMIX_USER,{delay:40});
-await page.type('input[name="password"]',process.env.LAMIX_PASS,{delay:40});
+  console.log("✏ Typing username");
 
-console.log("🧠 Solving captcha");
+  await page.type('input[name="username"]',process.env.LAMIX_USER,{delay:40});
 
-const bodyText = await page.evaluate(()=>document.body.innerText);
+  console.log("✏ Typing password");
 
-const match = bodyText.match(/(\d+)\s*\+\s*(\d+)/);
+  await page.type('input[name="password"]',process.env.LAMIX_PASS,{delay:40});
 
-if(match){
+  console.log("🧠 Solving captcha");
 
-const result = parseInt(match[1]) + parseInt(match[2]);
+  const bodyText = await page.evaluate(()=>document.body.innerText);
 
-await page.type('input[name="capt"]',result.toString());
+  const match = bodyText.match(/(\d+)\s*\+\s*(\d+)/);
 
-console.log(`Captcha: ${match[1]} + ${match[2]} = ${result}`);
+  if(match){
 
-}
+    const result = parseInt(match[1]) + parseInt(match[2]);
 
-await page.click("button");
+    await page.type('input[name="capt"]',result.toString());
 
-await sleep(5000);
+    console.log(`Captcha: ${match[1]} + ${match[2]} = ${result}`);
 
-await page.goto(process.env.LAMIX_URL+"/agent/SMSBulkAllocations",{waitUntil:"networkidle2"});
+  }
 
-if(page.url().includes("login")){
-throw new Error("Lamix login failed");
-}
+  await page.click("button");
 
-console.log("✅ LOGIN SUCCESS");
+  await sleep(4000);
 
-loggedIn = true;
+  await page.goto(process.env.LAMIX_URL+"/agent/SMSBulkAllocations",{waitUntil:"networkidle2"});
 
-await fetchRanges();
+  if(page.url().includes("login")){
+    throw new Error("Lamix login failed");
+  }
+
+  console.log("✅ LOGIN SUCCESS");
+
+  loggedIn = true;
+
+  await fetchRanges();
 
 }
 
 bot.start((ctx)=>{
 
-const savedId = userClientIds[ctx.from.id];
+  const savedId = userClientIds[ctx.from.id];
 
-if(savedId){
+  if(savedId){
 
-ctx.reply(
-`👤 Your saved Client ID: ${savedId}`,
+    ctx.reply(
+`👤 Saved Client ID: ${savedId}`,
 Markup.inlineKeyboard([
 [{text:"✅ Continue",callback_data:"continue_id"}],
 [{text:"🔄 Change ID",callback_data:"change_id"}]
 ])
 );
 
-}else{
+  }else{
 
-ctx.reply("🔑 Enter Lamix Client ID");
+    ctx.reply("🔑 Enter Lamix Client ID");
 
-userStates[ctx.from.id] = {step:"waiting_client_id"};
+    userStates[ctx.from.id] = {step:"waiting_client_id"};
 
-}
+  }
 
 });
 
 bot.on("text",async(ctx)=>{
 
-const state = userStates[ctx.from.id];
-if(!state) return;
+  const state = userStates[ctx.from.id];
+  if(!state) return;
 
-const text = ctx.message.text.trim();
+  const text = ctx.message.text.trim();
 
-if(state.step==="waiting_client_id"){
+  if(state.step==="waiting_client_id"){
 
-if(!clients[text])
-return ctx.reply("❌ Wrong client ID");
+    console.log("Client received:",text);
 
-userClientIds[ctx.from.id] = text;
+    if(!clients[text]){
+      return ctx.reply("❌ Wrong client ID");
+    }
 
-state.clientId = text;
-state.step = "choose_country";
+    userClientIds[ctx.from.id] = text;
 
-return ctx.reply("🌍 Send country name");
+    state.clientId = text;
+    state.step = "choose_country";
 
-}
+    return ctx.reply("🌍 Send country name");
 
-if(state.step==="choose_country"){
+  }
 
-state.country = text;
-state.step = "choose_range";
+  if(state.step==="choose_country"){
 
-return sendRanges(ctx,text);
+    state.country = text;
+    state.step = "choose_range";
 
-}
+    return sendRanges(ctx,text);
 
-if(state.step==="quantity"){
+  }
 
-const qty = parseInt(text);
+  if(state.step==="quantity"){
 
-if(isNaN(qty)||qty<1||qty>50)
-return ctx.reply("❌ Quantity 1-50");
+    const qty = parseInt(text);
 
-ctx.reply("⏳ Allocating numbers...");
+    if(isNaN(qty)||qty<1||qty>50){
+      return ctx.reply("❌ Quantity must be 1-50");
+    }
 
-const result = await allocateNumbers(
-state.clientId,
-state.country,
-state.rangeName,
-qty
-);
+    ctx.reply("⏳ Allocating numbers...");
 
-if(!result.success)
-return ctx.reply("❌ "+result.message);
+    const result = await allocateNumbers(
+      state.clientId,
+      state.country,
+      state.rangeName,
+      qty
+    );
 
-ctx.reply(
+    if(!result.success){
+      return ctx.reply("❌ "+result.message);
+    }
+
+    ctx.reply(
 `✅ Allocation Success
 
 Client: ${state.clientId}
@@ -201,74 +229,82 @@ Range: ${state.rangeName}
 Quantity: ${qty}`
 );
 
-delete userStates[ctx.from.id];
+    delete userStates[ctx.from.id];
 
-}
+  }
 
 });
 
 bot.on("callback_query",async(ctx)=>{
 
-const data = ctx.callbackQuery.data;
-const state = userStates[ctx.from.id];
+  const data = ctx.callbackQuery.data;
+  const state = userStates[ctx.from.id];
 
-await ctx.answerCbQuery();
+  await ctx.answerCbQuery();
 
-if(data==="continue_id"){
+  if(data==="continue_id"){
 
-const clientId=userClientIds[ctx.from.id];
+    const clientId = userClientIds[ctx.from.id];
 
-userStates[ctx.from.id]={step:"choose_country",clientId};
+    userStates[ctx.from.id] = {step:"choose_country",clientId};
 
-return ctx.reply("🌍 Send country name");
+    return ctx.reply("🌍 Send country name");
 
-}
+  }
 
-if(data==="change_id"){
+  if(data==="change_id"){
 
-userStates[ctx.from.id]={step:"waiting_client_id"};
+    userStates[ctx.from.id] = {step:"waiting_client_id"};
 
-return ctx.reply("🔑 Enter new client ID");
+    return ctx.reply("🔑 Enter new client ID");
 
-}
+  }
 
-if(!state) return;
+  if(!state) return;
 
-if(data.startsWith("range_")){
+  if(data.startsWith("range_")){
 
-state.rangeName=data.replace("range_","");
-state.step="quantity";
+    const index = parseInt(data.split("_")[1]);
 
-return ctx.reply("📦 Enter quantity");
+    state.rangeName = state.countryRanges[index];
 
-}
+    state.step = "quantity";
+
+    return ctx.reply("📦 Enter quantity");
+
+  }
 
 });
 
 function sendRanges(ctx,country){
 
-const ranges = RANGE_LIST.filter(r =>
-r.toLowerCase().includes(country.toLowerCase())
-);
+  const ranges = RANGE_LIST.filter(r =>
+    r.toLowerCase().includes(country.toLowerCase())
+  );
 
-if(ranges.length===0)
-return ctx.reply("❌ No ranges found");
+  if(ranges.length===0){
+    return ctx.reply("❌ No ranges found");
+  }
 
-const buttons=[];
+  const buttons=[];
 
-for(let i=0;i<ranges.length;i+=2){
+  for(let i=0;i<ranges.length;i+=2){
 
-const row=[{text:ranges[i],callback_data:`range_${ranges[i]}`}];
+    const row=[
+      {text:ranges[i],callback_data:`range_${i}`}
+    ];
 
-if(ranges[i+1]){
-row.push({text:ranges[i+1],callback_data:`range_${ranges[i+1]}`});
-}
+    if(ranges[i+1]){
+      row.push({text:ranges[i+1],callback_data:`range_${i+1}`});
+    }
 
-buttons.push(row);
+    buttons.push(row);
 
-}
+  }
 
-return ctx.reply(
+  userStates[ctx.from.id].countryRanges = ranges;
+
+  return ctx.reply(
 `📱 Choose Range (${country})`,
 Markup.inlineKeyboard(buttons)
 );
@@ -277,78 +313,83 @@ Markup.inlineKeyboard(buttons)
 
 async function allocateNumbers(clientName,country,rangeName,qty){
 
-try{
+  try{
 
-console.log("------------------------------------------------");
-console.log("📦 FAST ALLOCATION");
-console.log("Client:",clientName);
-console.log("Range:",rangeName);
+    console.log("------------------------------------------------");
+    console.log("📦 FAST ALLOCATION");
+    console.log("Client:",clientName);
+    console.log("Range:",rangeName);
 
-await loginLamix();
+    await loginLamix();
 
-const rangeId = RANGE_MAP[rangeName];
-const clientId = clients[clientName];
+    const rangeId = RANGE_MAP[rangeName];
+    const clientId = clients[clientName];
 
-if(!rangeId)
-return {success:false,message:"Range not found"};
+    if(!rangeId){
+      return {success:false,message:"Range not found"};
+    }
 
-if(!clientId)
-return {success:false,message:"Client not found"};
+    if(!clientId){
+      return {success:false,message:"Client not found"};
+    }
 
-const payload = {
-action:"allocate",
-ntype:"-2",
-"range[]":rangeId,
-"client[]":clientId,
-payterm:"9",
-payout:"0.011",
-qty:qty
-};
+    const payload = {
+      action:"allocate",
+      ntype:"-2",
+      "range[]":rangeId,
+      "client[]":clientId,
+      payterm:"9",
+      payout:"0.011",
+      qty:qty
+    };
 
-const response = await page.evaluate(async(payload)=>{
+    const response = await page.evaluate(async(payload)=>{
 
-const res = await fetch("/ints/agent/SMSBulkAllocations",{
-method:"POST",
-headers:{
-"Content-Type":"application/x-www-form-urlencoded"
-},
-body:new URLSearchParams(payload)
+      const res = await fetch("/ints/agent/SMSBulkAllocations",{
+        method:"POST",
+        headers:{
+          "Content-Type":"application/x-www-form-urlencoded"
+        },
+        body:new URLSearchParams(payload)
+      });
+
+      return await res.text();
+
+    },payload);
+
+    if(response.includes("Well Done")){
+      console.log("✅ Allocation success");
+      return {success:true};
+    }
+
+    if(response.toLowerCase().includes("no numbers")){
+      return {success:false,message:"No numbers available"};
+    }
+
+    return {success:false,message:"Panel rejected request"};
+
+  }catch(e){
+
+    console.log("❌ ERROR:",e.message);
+    loggedIn=false;
+
+    return {success:false,message:e.message};
+
+  }
+
+}
+
+bot.catch((err,ctx)=>{
+  console.error("BOT ERROR:",err);
+  if(ctx) ctx.reply("⚠ Bot error occurred");
 });
-
-return await res.text();
-
-},payload);
-
-if(response.includes("Well Done")){
-console.log("✅ Allocation success");
-return {success:true};
-}
-
-if(response.toLowerCase().includes("no numbers")){
-return {success:false,message:"No numbers available"};
-}
-
-return {success:false,message:"Panel rejected request"};
-
-}catch(e){
-
-console.log("❌ ERROR:",e.message);
-loggedIn=false;
-
-return {success:false,message:e.message};
-
-}
-
-}
-
-bot.catch(err=>console.log("BOT ERROR:",err));
 
 (async()=>{
 
-await initBrowser();
+  await initBrowser();
 
-bot.launch({dropPendingUpdates:true});
+  bot.launch({dropPendingUpdates:true});
 
-console.log("🤖 Lamix Bot Running");
+  console.log("🤖 Lamix Bot Running");
 
 })();
