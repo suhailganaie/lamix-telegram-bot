@@ -9,18 +9,38 @@ const bot = new Telegraf(process.env.BOT_TOKEN);
 
 const userStates = {};
 const userClientIds = {};
+const clientClaims = {};
 
 let browser;
 let page;
 
 let lamixReady = false;
 let lamixLoginInProgress = false;
-let allocationLock = false;
 
 let ALL_RANGES = [];
 
+const allocationQueue = [];
+let allocating = false;
+
 function sleep(ms){
   return new Promise(r=>setTimeout(r,ms));
+}
+
+function getToday(){
+  return new Date().toDateString();
+}
+
+function getPayout(country){
+
+  country = country.toLowerCase();
+
+  if(country.includes("tanzania")) return "0.015";
+  if(country.includes("cambodia")) return "0.014";
+  if(country.includes("comoros")) return "0.014";
+  if(country.includes("sri lanka")) return "0.014";
+  if(country.includes("malaysia")) return "0.013";
+
+  return "0.011";
 }
 
 async function initBrowser(){
@@ -48,8 +68,6 @@ async function ensureSession(){
       process.env.LAMIX_URL + "/ints/agent/SMSBulkAllocations",
       {waitUntil:"networkidle2"}
     );
-
-    console.log("CURRENT URL:", page.url());
 
     return !page.url().includes("login");
 
@@ -79,16 +97,12 @@ async function loginLamix(){
   await page.type('input[name="password"]',process.env.LAMIX_PASS,{delay:20});
 
   const body = await page.evaluate(()=>document.body.innerText);
-
   const match = body.match(/(\d+)\s*\+\s*(\d+)/);
 
   if(match){
 
     const result = Number(match[1]) + Number(match[2]);
-
     await page.type('input[name="capt"]',String(result));
-
-    console.log("Captcha solved:",result);
 
   }
 
@@ -97,44 +111,32 @@ async function loginLamix(){
     page.waitForNavigation({waitUntil:"networkidle2"})
   ]);
 
-  console.log("CURRENT URL:", page.url());
-
-  if(page.url().includes("login")){
-    throw new Error("Lamix login failed");
-  }
-
   console.log("✅ LOGIN SUCCESS");
 
 }
 
 async function loadAllRanges(){
 
-  console.log("📡 Loading ranges from Lamix");
+  console.log("📡 Loading ranges");
 
-  ALL_RANGES = [];
+  ALL_RANGES=[];
 
   await page.goto(
-    process.env.LAMIX_URL + "/ints/agent/SMSBulkAllocations",
+    process.env.LAMIX_URL+"/ints/agent/SMSBulkAllocations",
     {waitUntil:"networkidle2"}
   );
 
-  console.log("CURRENT URL:", page.url());
-
-  let pageNum = 1;
+  let pageNum=1;
 
   while(true){
 
-    console.log("Loading page",pageNum);
+    const text=await page.evaluate(async(pageNum)=>{
 
-    const text = await page.evaluate(async(pageNum)=>{
-
-      const res = await fetch(
+      const res=await fetch(
         `/ints/agent/res/aj_smsranges.php?max=25&page=${pageNum}`,
         {
-          method:"GET",
           headers:{
-            "X-Requested-With":"XMLHttpRequest",
-            "Accept":"*/*"
+            "X-Requested-With":"XMLHttpRequest"
           },
           credentials:"include"
         }
@@ -144,20 +146,21 @@ async function loadAllRanges(){
 
     },pageNum);
 
-    if(text.startsWith("<")){
-      throw new Error("Lamix returned HTML instead of JSON");
-    }
+    if(text.startsWith("<")) break;
 
-    const data = JSON.parse(text);
+    const data=JSON.parse(text);
 
-    if(!data.results || data.results.length === 0) break;
+    if(!data.results || !data.results.length) break;
 
     data.results.forEach(r=>{
-      const name = r.title.trim().replace(/^-\s*/,"");
+
+      const name=r.title.trim().replace(/^-\s*/,"");
+
       ALL_RANGES.push({
         id:r.id,
         name
       });
+
     });
 
     if(!data.pagination || !data.pagination.more) break;
@@ -166,7 +169,7 @@ async function loadAllRanges(){
 
   }
 
-  console.log("✅ Total ranges loaded:",ALL_RANGES.length);
+  console.log("✅ Total ranges:",ALL_RANGES.length);
 
 }
 
@@ -186,8 +189,6 @@ async function prepareLamix(){
 
   lamixLoginInProgress=true;
 
-  console.log("🔐 Preparing Lamix");
-
   await loginLamix();
   await loadAllRanges();
 
@@ -198,20 +199,69 @@ async function prepareLamix(){
 
 bot.start(async(ctx)=>{
 
-  try{
+  await prepareLamix();
 
-    await ctx.reply("🔄 Connecting to Lamix...");
+  const saved=userClientIds[ctx.from.id];
 
-    await prepareLamix();
+  if(saved){
+
+    return ctx.reply(
+`Saved Client ID: ${saved}`,
+Markup.inlineKeyboard([
+[{text:"Use Saved ID",callback_data:"use_saved"}],
+[{text:"Enter New ID",callback_data:"new_id"}]
+])
+);
+
+  }
+
+  userStates[ctx.from.id]={step:"client"};
+
+  ctx.reply("Enter Lamix Client ID");
+
+});
+
+bot.on("callback_query",async(ctx)=>{
+
+  const data=ctx.callbackQuery.data;
+
+  if(data==="use_saved"){
+
+    const id=userClientIds[ctx.from.id];
+
+    userStates[ctx.from.id]={
+      step:"range",
+      clientId:id
+    };
+
+    await ctx.answerCbQuery();
+    return ctx.reply("Send country");
+
+  }
+
+  if(data==="new_id"){
 
     userStates[ctx.from.id]={step:"client"};
 
-    ctx.reply("Enter Lamix Client ID");
+    await ctx.answerCbQuery();
+    return ctx.reply("Enter Lamix Client ID");
 
-  }catch(e){
+  }
 
-    console.log("Start error:",e.message);
-    ctx.reply("❌ Failed to connect Lamix");
+  const state=userStates[ctx.from.id];
+  if(!state) return;
+
+  if(data.startsWith("range_")){
+
+    const index=Number(data.split("_")[1]);
+    const r=state.ranges[index];
+
+    state.rangeId=r.id;
+    state.rangeName=r.name;
+    state.step="qty";
+
+    await ctx.answerCbQuery();
+    ctx.reply("Enter quantity (1-20)");
 
   }
 
@@ -241,21 +291,19 @@ bot.on("text",async(ctx)=>{
 
   if(state.step==="range"){
 
-    const ranges = ALL_RANGES
+    const ranges=ALL_RANGES
       .filter(r=>r.name.toLowerCase().includes(text.toLowerCase()))
       .slice(0,40);
 
     if(!ranges.length){
-      return ctx.reply("❌ No ranges found");
+      return ctx.reply("No ranges found");
     }
 
     const buttons=[];
 
     for(let i=0;i<ranges.length;i+=2){
 
-      const row=[
-        {text:ranges[i].name,callback_data:`range_${i}`}
-      ];
+      const row=[{text:ranges[i].name,callback_data:`range_${i}`}];
 
       if(ranges[i+1]){
         row.push({text:ranges[i+1].name,callback_data:`range_${i+1}`});
@@ -267,10 +315,7 @@ bot.on("text",async(ctx)=>{
 
     state.ranges=ranges;
 
-    return ctx.reply(
-      "Choose Range",
-      Markup.inlineKeyboard(buttons)
-    );
+    return ctx.reply("Choose Range",Markup.inlineKeyboard(buttons));
 
   }
 
@@ -278,77 +323,77 @@ bot.on("text",async(ctx)=>{
 
     const qty=Number(text);
 
-    if(!qty || qty<1 || qty>50){
-      return ctx.reply("Quantity must be 1-50");
+    if(!qty || qty<1 || qty>20){
+      return ctx.reply("Quantity must be 1-20");
     }
 
-    ctx.reply("Allocating numbers...");
+    const client=state.clientId;
+    const today=getToday();
 
-    const res = await allocateNumbers(
-      state.clientId,
-      state.rangeId,
+    if(!clientClaims[client]){
+      clientClaims[client]={date:today,count:0};
+    }
+
+    if(clientClaims[client].date!==today){
+      clientClaims[client]={date:today,count:0};
+    }
+
+    if(clientClaims[client].count>=10){
+      return ctx.reply("⚠ Daily limit reached (10 claims)");
+    }
+
+    ctx.reply("⏳ Queued for allocation...");
+
+    allocationQueue.push({
+      ctx,
+      client,
+      rangeId:state.rangeId,
+      rangeName:state.rangeName,
       qty
-    );
-
-    if(!res.success){
-      return ctx.reply("❌ "+res.message);
-    }
-
-    ctx.reply("✅ Allocation success");
+    });
 
     delete userStates[ctx.from.id];
 
-  }
-
-});
-
-bot.on("callback_query",async(ctx)=>{
-
-  const data=ctx.callbackQuery.data;
-  const state=userStates[ctx.from.id];
-
-  if(!state) return;
-
-  if(data.startsWith("range_")){
-
-    const index = Number(data.split("_")[1]);
-
-    const r = state.ranges[index];
-
-    state.rangeId = r.id;
-    state.rangeName = r.name;
-
-    state.step="qty";
-
-    await ctx.answerCbQuery();
-
-    ctx.reply("Enter quantity");
+    processQueue();
 
   }
 
 });
 
-async function allocateNumbers(clientName,rangeId,qty){
+async function processQueue(){
 
-  while(allocationLock){
-    await sleep(300);
+  if(allocating) return;
+  if(!allocationQueue.length) return;
+
+  allocating=true;
+
+  const job=allocationQueue.shift();
+
+  const sessionValid=await ensureSession();
+
+  if(!sessionValid){
+
+    console.log("⚠ Session expired → relogin");
+
+    lamixReady=false;
+
+    await loginLamix();
+
   }
 
-  allocationLock=true;
+  const payout=getPayout(job.rangeName);
+
+  const payload={
+    action:"allocate",
+    ntype:"-2",
+    "range[]":job.rangeId,
+    "client[]":clients[job.client],
+    payterm:"9",
+    payout,
+    qty:job.qty
+  };
 
   try{
-
-    const clientId=clients[clientName];
-
-    const payload={
-      action:"allocate",
-      ntype:"-2",
-      "range[]":rangeId,
-      "client[]":clientId,
-      payterm:"9",
-      payout:"0.011",
-      qty
-    };
 
     const res=await page.evaluate(async(payload)=>{
 
@@ -367,31 +412,100 @@ async function allocateNumbers(clientName,rangeId,qty){
 
     },payload);
 
-    allocationLock=false;
-
     if(res.includes("Well Done")){
-      return {success:true};
-    }
 
-    if(res.toLowerCase().includes("no numbers")){
-      return {success:false,message:"No numbers available"};
-    }
+      const today=getToday();
 
-    return {success:false,message:"Panel rejected request"};
+      if(!clientClaims[job.client]){
+        clientClaims[job.client]={date:today,count:0};
+      }
+
+      if(clientClaims[job.client].date!==today){
+        clientClaims[job.client]={date:today,count:0};
+      }
+
+      clientClaims[job.client].count++;
+
+      job.ctx.reply(
+`✅ Allocation success
+
+Range: ${job.rangeName}
+Qty: ${job.qty}
+Payout: ${payout}
+
+Claims today: ${clientClaims[job.client].count}/10
+
+Send country to claim again`
+);
+
+      userStates[job.ctx.from.id]={
+        step:"range",
+        clientId:job.client
+      };
+
+    }else{
+
+      job.ctx.reply("❌ Allocation failed");
+
+    }
 
   }catch(e){
 
-    allocationLock=false;
-
-    return {success:false,message:e.message};
+    job.ctx.reply("Error: "+e.message);
 
   }
 
+  allocating=false;
+
+  processQueue();
+
 }
+
+setInterval(async()=>{
+
+  try{
+
+    console.log("♻ Refreshing ranges");
+
+    await loadAllRanges();
+
+  }catch(e){
+
+    console.log("Range refresh error",e.message);
+
+  }
+
+},600000);
+
+setInterval(async()=>{
+
+  try{
+
+    const valid=await ensureSession();
+
+    if(!valid){
+
+      console.log("⚠ Session expired → reconnect");
+
+      lamixReady=false;
+
+      await loginLamix();
+
+    }
+
+  }catch(e){
+
+    console.log("KeepAlive error",e.message);
+
+  }
+
+},300000);
 
 (async()=>{
 
   await initBrowser();
+
+  await prepareLamix();
 
   bot.launch({dropPendingUpdates:true});
 
