@@ -70,7 +70,6 @@ async function ensureSession(){
     await page.goto(process.env.LAMIX_URL + "/agent/SMSBulkAllocations",{waitUntil:"networkidle2"});
 
     if(!page.url().includes("login")){
-      console.log("✅ Session still valid");
       loggedIn = true;
       return true;
     }
@@ -101,18 +100,12 @@ async function loginLamix(){
 
   await page.waitForSelector('input[name="username"]');
 
-  console.log("✏ Typing username");
-
   await page.type('input[name="username"]',process.env.LAMIX_USER,{delay:40});
-
-  console.log("✏ Typing password");
-
   await page.type('input[name="password"]',process.env.LAMIX_PASS,{delay:40});
 
   console.log("🧠 Solving captcha");
 
   const bodyText = await page.evaluate(()=>document.body.innerText);
-
   const match = bodyText.match(/(\d+)\s*\+\s*(\d+)/);
 
   if(match){
@@ -172,7 +165,7 @@ bot.on("text",async(ctx)=>{
   const state = userStates[ctx.from.id];
   if(!state) return;
 
-  const text = ctx.message.text.trim();
+  let text = ctx.message.text.trim();
 
   if(state.step==="waiting_client_id"){
 
@@ -193,7 +186,6 @@ bot.on("text",async(ctx)=>{
 
   if(state.step==="choose_country"){
 
-    state.country = text;
     state.step = "choose_range";
 
     return sendRanges(ctx,text);
@@ -212,7 +204,6 @@ bot.on("text",async(ctx)=>{
 
     const result = await allocateNumbers(
       state.clientId,
-      state.country,
       state.rangeName,
       qty
     );
@@ -268,7 +259,7 @@ bot.on("callback_query",async(ctx)=>{
 
     state.rangeName = state.countryRanges[index];
 
-    state.step = "quantity";
+    state.step="quantity";
 
     return ctx.reply("📦 Enter quantity");
 
@@ -276,14 +267,25 @@ bot.on("callback_query",async(ctx)=>{
 
 });
 
-function sendRanges(ctx,country){
+function sendRanges(ctx,input){
+
+  const clean = input
+    .replace(/xxxx/ig,"")
+    .replace(/\s+/g," ")
+    .trim();
 
   const ranges = RANGE_LIST.filter(r =>
-    r.toLowerCase().includes(country.toLowerCase())
+    r.toLowerCase().includes(clean.toLowerCase())
   );
 
   if(ranges.length===0){
-    return ctx.reply("❌ No ranges found");
+
+    userStates[ctx.from.id].step="choose_country";
+
+    return ctx.reply(
+"❌ No ranges found\n\nSend another country or range"
+);
+
   }
 
   const buttons=[];
@@ -305,13 +307,13 @@ function sendRanges(ctx,country){
   userStates[ctx.from.id].countryRanges = ranges;
 
   return ctx.reply(
-`📱 Choose Range (${country})`,
+`📱 Choose Range`,
 Markup.inlineKeyboard(buttons)
 );
 
 }
 
-async function allocateNumbers(clientName,country,rangeName,qty){
+async function allocateNumbers(clientName,rangeName,qty){
 
   try{
 
