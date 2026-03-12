@@ -22,6 +22,9 @@ let ALL_RANGES = [];
 const allocationQueue = [];
 let allocating = false;
 
+let pageBusy = false;   // ✅ navigation lock
+let browserRestarting = false; // ✅ crash protection
+
 function sleep(ms){
   return new Promise(r=>setTimeout(r,ms));
 }
@@ -53,6 +56,22 @@ async function initBrowser(){
     headless: chromium.headless
   });
 
+  browser.on("disconnected", async () => {
+    if(browserRestarting) return;
+    browserRestarting = true;
+
+    console.log("⚠ Chromium crashed → restarting browser");
+
+    try{
+      await initBrowser();
+      await prepareLamix();
+    }catch(e){
+      console.log("Browser restart error",e.message);
+    }
+
+    browserRestarting = false;
+  });
+
   page = await browser.newPage();
 
   await page.setViewport({width:1280,height:800});
@@ -60,13 +79,31 @@ async function initBrowser(){
 
 }
 
+async function safeGoto(url){
+
+  while(pageBusy){
+    await sleep(200);
+  }
+
+  pageBusy = true;
+
+  try{
+    await page.goto(url,{waitUntil:"networkidle2"});
+  }catch(e){
+    console.log("Navigation error:",e.message);
+  }
+
+  pageBusy = false;
+}
+
 async function ensureSession(){
+
+  if(pageBusy) return true;
 
   try{
 
-    await page.goto(
-      process.env.LAMIX_URL + "/ints/agent/SMSBulkAllocations",
-      {waitUntil:"networkidle2"}
+    await safeGoto(
+      process.env.LAMIX_URL + "/ints/agent/SMSBulkAllocations"
     );
 
     return !page.url().includes("login");
@@ -79,6 +116,8 @@ async function ensureSession(){
 
 async function loginLamix(){
 
+  if(pageBusy) return;
+
   if(await ensureSession()){
     console.log("✅ Session already valid");
     return;
@@ -86,9 +125,8 @@ async function loginLamix(){
 
   console.log("🌐 Opening Lamix login");
 
-  await page.goto(
-    process.env.LAMIX_URL + "/ints/login",
-    {waitUntil:"networkidle2"}
+  await safeGoto(
+    process.env.LAMIX_URL + "/ints/login"
   );
 
   await page.waitForSelector('input[name="username"]');
@@ -115,13 +153,14 @@ async function loginLamix(){
 
 async function loadAllRanges(){
 
+  if(pageBusy) return;
+
   console.log("📡 Loading ranges");
 
   ALL_RANGES=[];
 
-  await page.goto(
-    process.env.LAMIX_URL+"/ints/agent/SMSBulkAllocations",
-    {waitUntil:"networkidle2"}
+  await safeGoto(
+    process.env.LAMIX_URL+"/ints/agent/SMSBulkAllocations"
   );
 
   let pageNum=1;
