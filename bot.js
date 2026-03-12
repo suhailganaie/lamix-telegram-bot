@@ -13,9 +13,6 @@ const userClientIds = {};
 let browser;
 let page;
 
-let RANGE_MAP = {};
-let RANGE_LIST = [];
-
 let lamixReady = false;
 let lamixLoginInProgress = false;
 let allocationLock = false;
@@ -108,55 +105,6 @@ async function loginLamix(){
 
 }
 
-async function fetchRanges(){
-
-  console.log("📡 Fetching ranges");
-
-  RANGE_MAP = {};
-  RANGE_LIST = [];
-
-  let pageNum = 1;
-
-  while(true){
-
-    const data = await page.evaluate(async(pageNum)=>{
-
-      const res = await fetch(
-        `/ints/agent/res/aj_smsranges.php?max=25&page=${pageNum}`,
-        {headers:{"X-Requested-With":"XMLHttpRequest"}}
-      );
-
-      const text = await res.text();
-
-      try{
-        return JSON.parse(text);
-      }catch{
-        return {error:text};
-      }
-
-    },pageNum);
-
-    if(data.error) throw new Error("Range API error");
-
-    if(!data.results || data.results.length===0) break;
-
-    data.results.forEach(r=>{
-
-      const name = r.title.trim().replace(/^-\s*/,"");
-
-      RANGE_MAP[name] = r.id;
-      RANGE_LIST.push(name);
-
-    });
-
-    pageNum++;
-
-  }
-
-  console.log("✅ Total ranges:",RANGE_LIST.length);
-
-}
-
 async function prepareLamix(){
 
   if(lamixReady) return;
@@ -176,8 +124,6 @@ async function prepareLamix(){
   console.log("🔐 Preparing Lamix");
 
   await loginLamix();
-
-  await fetchRanges();
 
   lamixReady=true;
   lamixLoginInProgress=false;
@@ -243,7 +189,7 @@ bot.on("text",async(ctx)=>{
   }
 
   if(state.step==="range"){
-    return sendRanges(ctx,text);
+    return searchRanges(ctx,text);
   }
 
   if(state.step==="qty"){
@@ -258,7 +204,7 @@ bot.on("text",async(ctx)=>{
 
     const res=await allocateNumbers(
       state.clientId,
-      state.range,
+      state.rangeId,
       qty
     );
 
@@ -270,7 +216,7 @@ bot.on("text",async(ctx)=>{
 `✅ Allocation Success
 
 Client: ${state.clientId}
-Range: ${state.range}
+Range: ${state.rangeName}
 Qty: ${qty}`
 );
 
@@ -309,7 +255,10 @@ bot.on("callback_query",async(ctx)=>{
 
     const index=Number(data.split("_")[1]);
 
-    state.range=state.ranges[index];
+    const r=state.ranges[index];
+
+    state.rangeId=r.id;
+    state.rangeName=r.name;
 
     state.step="qty";
 
@@ -319,44 +268,85 @@ bot.on("callback_query",async(ctx)=>{
 
 });
 
-function sendRanges(ctx,input){
+async function searchRanges(ctx,query){
 
-  const clean=input.replace(/xxxx/ig,"").trim();
+  try{
 
-  const ranges=RANGE_LIST
-  .filter(r=>r.toLowerCase().includes(clean.toLowerCase()))
-  .slice(0,40);
+    const ranges=await page.evaluate(async(query)=>{
 
-  if(!ranges.length){
-    return ctx.reply("❌ No ranges found");
-  }
+      const res=await fetch(
+        `/ints/agent/res/aj_smsranges.php?q=${encodeURIComponent(query)}&page=1`,
+        {headers:{"X-Requested-With":"XMLHttpRequest"}}
+      );
 
-  const buttons=[];
+      const text=await res.text();
 
-  for(let i=0;i<ranges.length;i+=2){
+      try{
+        const data=JSON.parse(text);
+        return data.results||[];
+      }catch{
+        return [];
+      }
 
-    const row=[
-      {text:ranges[i],callback_data:`range_${i}`}
-    ];
+    },query);
 
-    if(ranges[i+1]){
-      row.push({text:ranges[i+1],callback_data:`range_${i+1}`});
+    if(!ranges.length){
+      return ctx.reply("❌ No ranges found");
     }
 
-    buttons.push(row);
+    const buttons=[];
+    const map=[];
+
+    for(let i=0;i<ranges.length && i<40;i+=2){
+
+      const row=[];
+
+      const r1=ranges[i];
+      const name1=r1.title.trim().replace(/^-\s*/,"");
+
+      map.push({id:r1.id,name:name1});
+
+      row.push({
+        text:name1,
+        callback_data:`range_${map.length-1}`
+      });
+
+      if(ranges[i+1]){
+
+        const r2=ranges[i+1];
+        const name2=r2.title.trim().replace(/^-\s*/,"");
+
+        map.push({id:r2.id,name:name2});
+
+        row.push({
+          text:name2,
+          callback_data:`range_${map.length-1}`
+        });
+
+      }
+
+      buttons.push(row);
+
+    }
+
+    userStates[ctx.from.id].ranges=map;
+
+    ctx.reply(
+      "Choose Range",
+      Markup.inlineKeyboard(buttons)
+    );
+
+  }catch(e){
+
+    console.log("Range search error:",e.message);
+
+    ctx.reply("⚠ Range search failed");
 
   }
-
-  userStates[ctx.from.id].ranges=ranges;
-
-  ctx.reply(
-"Choose Range",
-Markup.inlineKeyboard(buttons)
-);
 
 }
 
-async function allocateNumbers(clientName,rangeName,qty){
+async function allocateNumbers(clientName,rangeId,qty){
 
   while(allocationLock){
     await sleep(300);
@@ -368,13 +358,7 @@ async function allocateNumbers(clientName,rangeName,qty){
 
     await prepareLamix();
 
-    const rangeId=RANGE_MAP[rangeName];
     const clientId=clients[clientName];
-
-    if(!rangeId){
-      allocationLock=false;
-      return {success:false,message:"Range not found"};
-    }
 
     const payload={
       action:"allocate",
