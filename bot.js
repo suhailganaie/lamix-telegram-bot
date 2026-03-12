@@ -17,6 +17,8 @@ let lamixReady = false;
 let lamixLoginInProgress = false;
 let allocationLock = false;
 
+let ALL_RANGES = [];
+
 async function sleep(ms){
   return new Promise(r=>setTimeout(r,ms));
 }
@@ -35,9 +37,7 @@ async function initBrowser(){
 
   await page.setViewport({width:1280,height:800});
 
-  await page.setUserAgent(
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
-  );
+  await page.setUserAgent("Mozilla/5.0");
 
 }
 
@@ -105,6 +105,47 @@ async function loginLamix(){
 
 }
 
+async function loadAllRanges(){
+
+  console.log("📡 Loading ranges from Lamix");
+
+  ALL_RANGES = [];
+
+  let pageNum = 1;
+
+  while(true){
+
+    const data = await page.evaluate(async(pageNum)=>{
+
+      const res = await fetch(
+        `/ints/agent/res/aj_smsranges.php?max=25&page=${pageNum}`,
+        {headers:{"X-Requested-With":"XMLHttpRequest"}}
+      );
+
+      return await res.json();
+
+    },pageNum);
+
+    if(!data.results || data.results.length === 0) break;
+
+    data.results.forEach(r=>{
+      const name = r.title.trim().replace(/^-\s*/,"");
+      ALL_RANGES.push({
+        id:r.id,
+        name
+      });
+    });
+
+    if(!data.pagination || !data.pagination.more) break;
+
+    pageNum++;
+
+  }
+
+  console.log("✅ Total ranges loaded:",ALL_RANGES.length);
+
+}
+
 async function prepareLamix(){
 
   if(lamixReady) return;
@@ -119,14 +160,16 @@ async function prepareLamix(){
 
   }
 
-  lamixLoginInProgress=true;
+  lamixLoginInProgress = true;
 
   console.log("🔐 Preparing Lamix");
 
   await loginLamix();
 
-  lamixReady=true;
-  lamixLoginInProgress=false;
+  await loadAllRanges();
+
+  lamixReady = true;
+  lamixLoginInProgress = false;
 
 }
 
@@ -138,7 +181,7 @@ bot.start(async(ctx)=>{
 
     await prepareLamix();
 
-    const saved=userClientIds[ctx.from.id];
+    const saved = userClientIds[ctx.from.id];
 
     if(saved){
 
@@ -152,7 +195,7 @@ Markup.inlineKeyboard([
 
     }
 
-    userStates[ctx.from.id]={step:"client"};
+    userStates[ctx.from.id] = {step:"client"};
 
     ctx.reply("Enter Lamix Client ID");
 
@@ -168,41 +211,41 @@ Markup.inlineKeyboard([
 
 bot.on("text",async(ctx)=>{
 
-  const state=userStates[ctx.from.id];
+  const state = userStates[ctx.from.id];
   if(!state) return;
 
-  const text=ctx.message.text.trim();
+  const text = ctx.message.text.trim();
 
-  if(state.step==="client"){
+  if(state.step === "client"){
 
     if(!clients[text]){
       return ctx.reply("❌ Wrong client ID");
     }
 
-    userClientIds[ctx.from.id]=text;
+    userClientIds[ctx.from.id] = text;
 
-    state.clientId=text;
-    state.step="range";
+    state.clientId = text;
+    state.step = "range";
 
     return ctx.reply("Send country or range");
 
   }
 
-  if(state.step==="range"){
+  if(state.step === "range"){
     return searchRanges(ctx,text);
   }
 
-  if(state.step==="qty"){
+  if(state.step === "qty"){
 
-    const qty=Number(text);
+    const qty = Number(text);
 
-    if(!qty||qty<1||qty>50){
+    if(!qty || qty < 1 || qty > 50){
       return ctx.reply("Quantity must be 1-50");
     }
 
     ctx.reply("Allocating numbers...");
 
-    const res=await allocateNumbers(
+    const res = await allocateNumbers(
       state.clientId,
       state.rangeId,
       qty
@@ -228,24 +271,24 @@ Qty: ${qty}`
 
 bot.on("callback_query",async(ctx)=>{
 
-  const data=ctx.callbackQuery.data;
-  const state=userStates[ctx.from.id];
+  const data = ctx.callbackQuery.data;
+  const state = userStates[ctx.from.id];
 
   await ctx.answerCbQuery();
 
-  if(data==="continue"){
+  if(data === "continue"){
 
-    const id=userClientIds[ctx.from.id];
+    const id = userClientIds[ctx.from.id];
 
-    userStates[ctx.from.id]={step:"range",clientId:id};
+    userStates[ctx.from.id] = {step:"range",clientId:id};
 
     return ctx.reply("Send country or range");
 
   }
 
-  if(data==="change"){
+  if(data === "change"){
 
-    userStates[ctx.from.id]={step:"client"};
+    userStates[ctx.from.id] = {step:"client"};
 
     return ctx.reply("Enter client ID");
 
@@ -253,14 +296,14 @@ bot.on("callback_query",async(ctx)=>{
 
   if(data.startsWith("range_")){
 
-    const index=Number(data.split("_")[1]);
+    const index = Number(data.split("_")[1]);
 
-    const r=state.ranges[index];
+    const r = state.ranges[index];
 
-    state.rangeId=r.id;
-    state.rangeName=r.name;
+    state.rangeId = r.id;
+    state.rangeName = r.name;
 
-    state.step="qty";
+    state.step = "qty";
 
     return ctx.reply("Enter quantity");
 
@@ -268,81 +311,38 @@ bot.on("callback_query",async(ctx)=>{
 
 });
 
-async function searchRanges(ctx,query){
+function searchRanges(ctx,query){
 
-  try{
+  const ranges = ALL_RANGES
+  .filter(r => r.name.toLowerCase().includes(query.toLowerCase()))
+  .slice(0,40);
 
-    const ranges=await page.evaluate(async(query)=>{
+  if(!ranges.length){
+    return ctx.reply("❌ No ranges found");
+  }
 
-      const res=await fetch(
-        `/ints/agent/res/aj_smsranges.php?max=25&page=1&search=${encodeURIComponent(query)}`,
-        {headers:{"X-Requested-With":"XMLHttpRequest"}}
-      );
+  const buttons=[];
 
-      const text=await res.text();
+  for(let i=0;i<ranges.length;i+=2){
 
-      try{
-        const data=JSON.parse(text);
-        return data.results||[];
-      }catch{
-        return [];
-      }
+    const row=[
+      {text:ranges[i].name,callback_data:`range_${i}`}
+    ];
 
-    },query);
-
-    if(!ranges.length){
-      return ctx.reply("❌ No ranges found");
+    if(ranges[i+1]){
+      row.push({text:ranges[i+1].name,callback_data:`range_${i+1}`});
     }
 
-    const buttons=[];
-    const map=[];
-
-    for(let i=0;i<ranges.length && i<40;i+=2){
-
-      const row=[];
-
-      const r1=ranges[i];
-      const name1=r1.title.trim().replace(/^-\s*/,"");
-
-      map.push({id:r1.id,name:name1});
-
-      row.push({
-        text:name1,
-        callback_data:`range_${map.length-1}`
-      });
-
-      if(ranges[i+1]){
-
-        const r2=ranges[i+1];
-        const name2=r2.title.trim().replace(/^-\s*/,"");
-
-        map.push({id:r2.id,name:name2});
-
-        row.push({
-          text:name2,
-          callback_data:`range_${map.length-1}`
-        });
-
-      }
-
-      buttons.push(row);
-
-    }
-
-    userStates[ctx.from.id].ranges=map;
-
-    ctx.reply(
-      "Choose Range",
-      Markup.inlineKeyboard(buttons)
-    );
-
-  }catch(e){
-
-    console.log("Range search error:",e.message);
-
-    ctx.reply("⚠ Range search failed");
+    buttons.push(row);
 
   }
+
+  userStates[ctx.from.id].ranges = ranges;
+
+  ctx.reply(
+    "Choose Range",
+    Markup.inlineKeyboard(buttons)
+  );
 
 }
 
@@ -352,13 +352,13 @@ async function allocateNumbers(clientName,rangeId,qty){
     await sleep(300);
   }
 
-  allocationLock=true;
+  allocationLock = true;
 
   try{
 
     await prepareLamix();
 
-    const clientId=clients[clientName];
+    const clientId = clients[clientName];
 
     const payload={
       action:"allocate",
@@ -370,9 +370,9 @@ async function allocateNumbers(clientName,rangeId,qty){
       qty
     };
 
-    const res=await page.evaluate(async(payload)=>{
+    const res = await page.evaluate(async(payload)=>{
 
-      const r=await fetch(
+      const r = await fetch(
         "/ints/agent/SMSBulkAllocations",
         {
           method:"POST",
@@ -387,7 +387,7 @@ async function allocateNumbers(clientName,rangeId,qty){
 
     },payload);
 
-    allocationLock=false;
+    allocationLock = false;
 
     if(res.includes("Well Done")){
       return {success:true};
@@ -401,37 +401,13 @@ async function allocateNumbers(clientName,rangeId,qty){
 
   }catch(e){
 
-    allocationLock=false;
+    allocationLock = false;
 
     return {success:false,message:e.message};
 
   }
 
 }
-
-setInterval(async()=>{
-
-  try{
-
-    const valid=await ensureSession();
-
-    if(!valid){
-
-      console.log("Session expired → reconnect");
-
-      lamixReady=false;
-
-      await prepareLamix();
-
-    }
-
-  }catch(e){
-
-    console.log("KeepAlive error:",e.message);
-
-  }
-
-},600000);
 
 (async()=>{
 
