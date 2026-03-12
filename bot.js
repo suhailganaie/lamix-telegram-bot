@@ -19,7 +19,7 @@ let allocationLock = false;
 
 let ALL_RANGES = [];
 
-async function sleep(ms){
+function sleep(ms){
   return new Promise(r=>setTimeout(r,ms));
 }
 
@@ -74,6 +74,7 @@ async function loginLamix(){
   await page.type('input[name="password"]',process.env.LAMIX_PASS,{delay:20});
 
   const body = await page.evaluate(()=>document.body.innerText);
+
   const match = body.match(/(\d+)\s*\+\s*(\d+)/);
 
   if(match){
@@ -113,25 +114,36 @@ async function loadAllRanges(){
 
   while(true){
 
-    const data = await page.evaluate(async(pageNum, base)=>{
+    console.log("Loading page",pageNum);
+
+    const text = await page.evaluate(async(pageNum,base)=>{
 
       const res = await fetch(
         base + `/ints/agent/res/aj_smsranges.php?max=25&page=${pageNum}`,
         {headers:{"X-Requested-With":"XMLHttpRequest"}}
       );
 
-      return await res.json();
+      return await res.text();
 
     },pageNum,process.env.LAMIX_URL);
 
-    if(!data.results || data.results.length === 0) break;
+    if(text.startsWith("<")){
+      throw new Error("Lamix returned HTML instead of JSON");
+    }
+
+    const data = JSON.parse(text);
+
+    if(!data.results || data.results.length===0) break;
 
     data.results.forEach(r=>{
+
       const name = r.title.trim().replace(/^-\s*/,"");
+
       ALL_RANGES.push({
         id:r.id,
         name
       });
+
     });
 
     if(!data.pagination || !data.pagination.more) break;
@@ -158,15 +170,17 @@ async function prepareLamix(){
 
   }
 
-  lamixLoginInProgress = true;
+  lamixLoginInProgress=true;
 
   console.log("🔐 Preparing Lamix");
 
   await loginLamix();
+
   await loadAllRanges();
 
-  lamixReady = true;
-  lamixLoginInProgress = false;
+  lamixReady=true;
+
+  lamixLoginInProgress=false;
 
 }
 
@@ -178,26 +192,14 @@ bot.start(async(ctx)=>{
 
     await prepareLamix();
 
-    const saved = userClientIds[ctx.from.id];
+    userStates[ctx.from.id]={step:"client"};
 
-    if(saved){
-
-      return ctx.reply(
-`👤 Saved Client: ${saved}`,
-Markup.inlineKeyboard([
-[{text:"Continue",callback_data:"continue"}],
-[{text:"Change",callback_data:"change"}]
-])
-);
-
-    }
-
-    userStates[ctx.from.id] = {step:"client"};
     ctx.reply("Enter Lamix Client ID");
 
   }catch(e){
 
     console.log("Start error:",e.message);
+
     ctx.reply("❌ Failed to connect Lamix");
 
   }
@@ -222,25 +224,56 @@ bot.on("text",async(ctx)=>{
     state.clientId=text;
     state.step="range";
 
-    return ctx.reply("Send country or range");
+    return ctx.reply("Send country");
 
   }
 
   if(state.step==="range"){
-    return searchRanges(ctx,text);
+
+    const ranges = ALL_RANGES
+      .filter(r=>r.name.toLowerCase().includes(text.toLowerCase()))
+      .slice(0,40);
+
+    if(!ranges.length){
+      return ctx.reply("❌ No ranges found");
+    }
+
+    const buttons=[];
+
+    for(let i=0;i<ranges.length;i+=2){
+
+      const row=[
+        {text:ranges[i].name,callback_data:`range_${i}`}
+      ];
+
+      if(ranges[i+1]){
+        row.push({text:ranges[i+1].name,callback_data:`range_${i+1}`});
+      }
+
+      buttons.push(row);
+
+    }
+
+    state.ranges=ranges;
+
+    return ctx.reply(
+      "Choose Range",
+      Markup.inlineKeyboard(buttons)
+    );
+
   }
 
   if(state.step==="qty"){
 
     const qty=Number(text);
 
-    if(!qty||qty<1||qty>50){
+    if(!qty || qty<1 || qty>50){
       return ctx.reply("Quantity must be 1-50");
     }
 
     ctx.reply("Allocating numbers...");
 
-    const res=await allocateNumbers(
+    const res = await allocateNumbers(
       state.clientId,
       state.rangeId,
       qty
@@ -250,13 +283,7 @@ bot.on("text",async(ctx)=>{
       return ctx.reply("❌ "+res.message);
     }
 
-    ctx.reply(
-`✅ Allocation Success
-
-Client: ${state.clientId}
-Range: ${state.rangeName}
-Qty: ${qty}`
-);
+    ctx.reply("✅ Allocation success");
 
     delete userStates[ctx.from.id];
 
@@ -264,40 +291,31 @@ Qty: ${qty}`
 
 });
 
-function searchRanges(ctx,query){
+bot.on("callback_query",async(ctx)=>{
 
-  const ranges = ALL_RANGES
-  .filter(r => r.name.toLowerCase().includes(query.toLowerCase()))
-  .slice(0,40);
+  const data=ctx.callbackQuery.data;
+  const state=userStates[ctx.from.id];
 
-  if(!ranges.length){
-    return ctx.reply("❌ No ranges found");
-  }
+  if(!state) return;
 
-  const buttons=[];
+  if(data.startsWith("range_")){
 
-  for(let i=0;i<ranges.length;i+=2){
+    const index = Number(data.split("_")[1]);
 
-    const row=[
-      {text:ranges[i].name,callback_data:`range_${i}`}
-    ];
+    const r = state.ranges[index];
 
-    if(ranges[i+1]){
-      row.push({text:ranges[i+1].name,callback_data:`range_${i+1}`});
-    }
+    state.rangeId = r.id;
+    state.rangeName = r.name;
 
-    buttons.push(row);
+    state.step="qty";
+
+    await ctx.answerCbQuery();
+
+    ctx.reply("Enter quantity");
 
   }
 
-  userStates[ctx.from.id].ranges=ranges;
-
-  ctx.reply(
-    "Choose Range",
-    Markup.inlineKeyboard(buttons)
-  );
-
-}
+});
 
 async function allocateNumbers(clientName,rangeId,qty){
 
@@ -308,8 +326,6 @@ async function allocateNumbers(clientName,rangeId,qty){
   allocationLock=true;
 
   try{
-
-    await prepareLamix();
 
     const clientId=clients[clientName];
 
@@ -355,6 +371,7 @@ async function allocateNumbers(clientName,rangeId,qty){
   }catch(e){
 
     allocationLock=false;
+
     return {success:false,message:e.message};
 
   }
