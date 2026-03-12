@@ -1,194 +1,3 @@
-const { Telegraf, Markup } = require("telegraf");
-const puppeteer = require("puppeteer-core");
-const chromium = require("@sparticuz/chromium");
-require("dotenv").config();
-
-const clients = require("./clients.json").clients;
-const RANGES = require("./ranges.json");
-
-const bot = new Telegraf(process.env.BOT_TOKEN);
-
-const userStates = {};
-const userClientIds = {};
-
-const COUNTRIES = Object.keys(RANGES);
-
-bot.start((ctx) => {
-
-  const savedId = userClientIds[ctx.from.id];
-
-  if (savedId) {
-
-    ctx.reply(
-`👤 Your saved Client ID: ${savedId}
-
-What would you like to do?`,
-      Markup.inlineKeyboard([
-        [{ text: "✅ Continue with this ID", callback_data: "continue_id" }],
-        [{ text: "🔄 Change Client ID", callback_data: "change_id" }]
-      ])
-    );
-
-  } else {
-
-    ctx.reply("🔑 Enter Lamix Client ID");
-    userStates[ctx.from.id] = { step: "waiting_client_id" };
-
-  }
-
-});
-
-bot.on("text", async (ctx) => {
-
-  const state = userStates[ctx.from.id];
-  if (!state) return;
-
-  const text = ctx.message.text.trim();
-
-  if (state.step === "waiting_client_id") {
-
-    if (!clients.includes(text)) {
-      return ctx.reply("❌ Wrong client ID. Please enter your ID.");
-    }
-
-    userClientIds[ctx.from.id] = text;
-    state.clientId = text;
-    state.step = "choose_country";
-
-    return ctx.reply("🌍 Send the country name");
-  }
-
-  if (state.step === "choose_country") {
-
-    const realCountry = COUNTRIES.find(
-      c => c.toLowerCase() === text.toLowerCase()
-    );
-
-    if (!realCountry) {
-      return ctx.reply("❌ Wrong country please send the country");
-    }
-
-    state.country = realCountry;
-    state.step = "choose_range";
-
-    return sendRanges(ctx, realCountry);
-  }
-
-  if (state.step === "quantity") {
-
-    const qty = parseInt(text);
-
-    if (isNaN(qty) || qty < 5 || qty > 50) {
-      return ctx.reply("❌ Enter quantity between 5 and 50");
-    }
-
-    ctx.reply("⏳ Allocating numbers...");
-
-    const result = await allocateNumbers(
-      state.clientId,
-      state.country,
-      state.rangeName,
-      qty
-    );
-
-    if (!result.success) {
-      return ctx.reply("❌ " + result.message);
-    }
-
-    ctx.reply(
-`✅ Allocation Success
-
-Client: ${state.clientId}
-Country: ${state.country}
-Range: ${state.rangeName}
-
-Numbers:
-${result.numbers.join("\n")}`
-    );
-
-    delete userStates[ctx.from.id];
-  }
-
-});
-
-bot.on("callback_query", async (ctx) => {
-
-  const data = ctx.callbackQuery.data;
-  const state = userStates[ctx.from.id];
-
-  await ctx.answerCbQuery();
-
-  if (data === "continue_id") {
-
-    const clientId = userClientIds[ctx.from.id];
-
-    userStates[ctx.from.id] = {
-      step: "choose_country",
-      clientId
-    };
-
-    return ctx.reply("🌍 Send the country name");
-  }
-
-  if (data === "change_id") {
-
-    userStates[ctx.from.id] = { step: "waiting_client_id" };
-
-    return ctx.reply("🔑 Enter new Lamix Client ID");
-  }
-
-  if (!state) return;
-
-  if (data.startsWith("range_")) {
-
-    const index = parseInt(data.split("_")[1]);
-
-    state.rangeName = RANGES[state.country][index];
-    state.step = "quantity";
-
-    return ctx.reply("📦 How many numbers? (5-50)");
-  }
-
-  if (data === "back_country") {
-
-    state.step = "choose_country";
-
-    return ctx.reply("🌍 Send the country name");
-  }
-
-});
-
-function sendRanges(ctx, country) {
-
-  const ranges = RANGES[country];
-  const buttons = [];
-
-  for (let i = 0; i < ranges.length; i += 2) {
-
-    const row = [
-      { text: ranges[i], callback_data: `range_${i}` }
-    ];
-
-    if (ranges[i + 1]) {
-      row.push({
-        text: ranges[i + 1],
-        callback_data: `range_${i + 1}`
-      });
-    }
-
-    buttons.push(row);
-  }
-
-  buttons.push([
-    { text: "⬅ Back", callback_data: "back_country" }
-  ]);
-
-  return ctx.reply(
-    `📱 Choose Range (${country})`,
-    Markup.inlineKeyboard(buttons)
-  );
-}
-
 async function allocateNumbers(clientId, country, rangeName, qty) {
 
   console.log("-----------");
@@ -213,16 +22,39 @@ async function allocateNumbers(clientId, country, rangeName, qty) {
       waitUntil: "domcontentloaded"
     });
 
-    console.log("Waiting for login inputs");
+    console.log("Waiting for username field");
 
-    await page.waitForSelector('input[placeholder="Username"]');
+    await page.waitForSelector('input[name="username"]');
 
-    console.log("Entering credentials");
+    console.log("Typing username");
 
-    await page.type('input[placeholder="Username"]', process.env.LAMIX_USER);
-    await page.type('input[placeholder="Password"]', process.env.LAMIX_PASS);
+    await page.type('input[name="username"]', process.env.LAMIX_USER, { delay: 40 });
 
-    await solveMathCaptcha(page);
+    console.log("Typing password");
+
+    await page.type('input[name="password"]', process.env.LAMIX_PASS, { delay: 40 });
+
+    console.log("Solving captcha");
+
+    const text = await page.evaluate(() => document.body.innerText);
+
+    const match = text.match(/(\d+)\s*\+\s*(\d+)/);
+
+    if (match) {
+
+      const a = parseInt(match[1]);
+      const b = parseInt(match[2]);
+      const result = a + b;
+
+      console.log(`Captcha solved: ${a}+${b}=${result}`);
+
+      await page.type('input[name="capt"]', result.toString(), { delay: 40 });
+
+    } else {
+
+      console.log("Captcha not detected");
+
+    }
 
     console.log("Submitting login");
 
@@ -230,7 +62,21 @@ async function allocateNumbers(clientId, country, rangeName, qty) {
 
     await page.waitForNavigation({ timeout: 20000 });
 
-    console.log("Login successful");
+    const currentUrl = page.url();
+
+    if (currentUrl.includes("login")) {
+
+      console.log("LOGIN FAILED ❌");
+
+      await browser.close();
+
+      return { success: false, message: "Login failed" };
+
+    }
+
+    console.log("LOGIN SUCCESS ✅");
+
+    console.log("Opening numbers page");
 
     await page.goto(process.env.LAMIX_URL + "/numbers", {
       waitUntil: "networkidle2"
@@ -239,9 +85,12 @@ async function allocateNumbers(clientId, country, rangeName, qty) {
     console.log("Opening range:", rangeName);
 
     await page.evaluate((rangeName) => {
+
       const el = [...document.querySelectorAll("*")]
         .find(e => e.textContent.includes(rangeName));
+
       if (el) el.click();
+
     }, rangeName);
 
     await page.waitForTimeout(2000);
@@ -287,39 +136,7 @@ async function allocateNumbers(clientId, country, rangeName, qty) {
     await browser.close();
 
     return { success: false, message: e.message };
-  }
-
-}
-
-async function solveMathCaptcha(page) {
-
-  try {
-
-    const text = await page.evaluate(() => document.body.innerText);
-
-    const match = text.match(/(\d+)\s*\+\s*(\d+)/);
-
-    if (!match) return;
-
-    const a = parseInt(match[1]);
-    const b = parseInt(match[2]);
-
-    const result = a + b;
-
-    console.log(`Captcha solved: ${a}+${b}=${result}`);
-
-    await page.type('input[placeholder="Answer"]', result.toString());
-
-  } catch (e) {
-
-    console.log("Captcha skipped");
 
   }
 
 }
-
-bot.catch(err => console.log("BOT ERROR:", err));
-
-bot.launch({ dropPendingUpdates: true });
-
-console.log("🚀 Lamix Bot Running");
