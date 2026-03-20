@@ -499,7 +499,7 @@ setInterval(async()=>{
     console.log("Range refresh error",e.message);
   }
 
-},600000);
+},60000);
 
 setInterval(async()=>{
 
@@ -517,7 +517,7 @@ setInterval(async()=>{
     console.log("KeepAlive error",e.message);
   }
 
-},300000);
+},100000);
 
 (async()=>{
 
